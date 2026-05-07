@@ -1,0 +1,560 @@
+{
+  "ultra321_raw": [
+    {
+      "filename": "Ultra100321_260119_182915.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260119_191624.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260119_193305.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260120_183757.txt",
+      "offset_s": -2.815,
+      "logger": "ultra_20260120_184041.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_012231.txt",
+      "offset_s": -2.815,
+      "logger": "ultra_20260120_184041.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_162858.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_172133.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_172656.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260122_175808.txt",
+      "offset_s": -1.645,
+      "logger": "ultra_20260122_181501.dat"
+    },
+    {
+      "filename": "Ultra100321_260202_190739.txt",
+      "offset_s": -84.612,
+      "logger": "ultra_20260202_200409.dat"
+    },
+    {
+      "filename": "Ultra100321_260202_204623.txt",
+      "offset_s": -84.612,
+      "logger": "ultra_20260202_200409.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_155038.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_174513.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_174840.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_190014.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_191021.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260204_160121.txt",
+      "offset_s": -58.944,
+      "logger": "ultra_20260204_164637.dat"
+    },
+    {
+      "filename": "Ultra100321_260205_175858.txt",
+      "offset_s": -0.083,
+      "logger": "ultra_20260205_181554.dat"
+    },
+    {
+      "filename": "Ultra100321_260205_180958.txt",
+      "offset_s": -0.083,
+      "logger": "ultra_20260205_181554.dat"
+    },
+    {
+      "filename": "Ultra100321_260206_181013.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260207_012905.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260207_013409.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260208_013410.txt",
+      "offset_s": 1.361,
+      "logger": "ultra_20260207_013445.dat"
+    },
+    {
+      "filename": "Ultra100321_260209_013424.txt",
+      "offset_s": 2.296,
+      "logger": "ultra_20260208_000001.dat"
+    },
+    {
+      "filename": "Ultra100321_260210_013448.txt",
+      "offset_s": 3.265,
+      "logger": "ultra_20260209_000008.dat"
+    },
+    {
+      "filename": "Ultra100321_260211_013508.txt",
+      "offset_s": 4.676,
+      "logger": "ultra_20260210_224519.dat"
+    },
+    {
+      "filename": "Ultra100321_260212_013526.txt",
+      "offset_s": 5.223,
+      "logger": "ultra_20260211_000002.dat"
+    },
+    {
+      "filename": "Ultra100321_260308_184233.txt",
+      "offset_s": 10.475,
+      "logger": "ultra_20260308_184456.dat"
+    },
+    {
+      "filename": "Ultra100321_260308_191905.txt",
+      "offset_s": 10.475,
+      "logger": "ultra_20260308_184456.dat"
+    },
+    {
+      "filename": "Ultra100321_260310_145824.txt",
+      "offset_s": 10.714,
+      "logger": "ultra_20260310_150110.dat"
+    }
+  ],
+  "ultra321_spectra": [
+    {
+      "filename": "Ultra100321_260119_182915spectra.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260119_191624spectra.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260119_193305spectra.txt",
+      "offset_s": -2.628,
+      "logger": "ultra_20260119_201924.dat"
+    },
+    {
+      "filename": "Ultra100321_260120_183757spectra.txt",
+      "offset_s": -2.815,
+      "logger": "ultra_20260120_184041.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_012231spectra.txt",
+      "offset_s": -2.815,
+      "logger": "ultra_20260120_184041.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_162858spectra.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_172133spectra.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260121_172656spectra.txt",
+      "offset_s": -1.954,
+      "logger": "ultra_20260121_172759.dat"
+    },
+    {
+      "filename": "Ultra100321_260122_175808spectra.txt",
+      "offset_s": -1.645,
+      "logger": "ultra_20260122_181501.dat"
+    },
+    {
+      "filename": "Ultra100321_260202_190739spectra.txt",
+      "offset_s": -84.612,
+      "logger": "ultra_20260202_200409.dat"
+    },
+    {
+      "filename": "Ultra100321_260202_204623spectra.txt",
+      "offset_s": -84.612,
+      "logger": "ultra_20260202_200409.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_155038spectra.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_174513spectra.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_174840spectra.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_190014spectra.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260203_191021spectra.txt",
+      "offset_s": -60.077,
+      "logger": "ultra_20260203_162046.dat"
+    },
+    {
+      "filename": "Ultra100321_260204_160121spectra.txt",
+      "offset_s": -58.944,
+      "logger": "ultra_20260204_164637.dat"
+    },
+    {
+      "filename": "Ultra100321_260205_175858spectra.txt",
+      "offset_s": -0.083,
+      "logger": "ultra_20260205_181554.dat"
+    },
+    {
+      "filename": "Ultra100321_260205_180958spectra.txt",
+      "offset_s": -0.083,
+      "logger": "ultra_20260205_181554.dat"
+    },
+    {
+      "filename": "Ultra100321_260206_181013spectra.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260207_012905spectra.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260207_013409spectra.txt",
+      "offset_s": 0.53,
+      "logger": "ultra_20260206_000000.dat"
+    },
+    {
+      "filename": "Ultra100321_260208_013410spectra.txt",
+      "offset_s": 1.361,
+      "logger": "ultra_20260207_013445.dat"
+    },
+    {
+      "filename": "Ultra100321_260209_013424spectra.txt",
+      "offset_s": 2.296,
+      "logger": "ultra_20260208_000001.dat"
+    },
+    {
+      "filename": "Ultra100321_260210_013448spectra.txt",
+      "offset_s": 3.265,
+      "logger": "ultra_20260209_000008.dat"
+    },
+    {
+      "filename": "Ultra100321_260211_013508spectra.txt",
+      "offset_s": 4.676,
+      "logger": "ultra_20260210_224519.dat"
+    },
+    {
+      "filename": "Ultra100321_260212_013526spectra.txt",
+      "offset_s": 5.223,
+      "logger": "ultra_20260211_000002.dat"
+    },
+    {
+      "filename": "Ultra100321_260308_184233spectra.txt",
+      "offset_s": 10.475,
+      "logger": "ultra_20260308_184456.dat"
+    },
+    {
+      "filename": "Ultra100321_260308_191905spectra.txt",
+      "offset_s": 10.475,
+      "logger": "ultra_20260308_184456.dat"
+    },
+    {
+      "filename": "Ultra100321_260310_145824spectra.txt",
+      "offset_s": 10.714,
+      "logger": "ultra_20260310_150110.dat"
+    }
+  ],
+  "pico017_raw": [
+    {
+      "filename": "Pico100017_260119_123114.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_132315.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_135745.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_143936.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_161342.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260120_123631.txt",
+      "offset_s": 21603.866,
+      "logger": "pico_20260120_184041.dat"
+    },
+    {
+      "filename": "Pico100017_260120_192125.txt",
+      "offset_s": 21603.866,
+      "logger": "pico_20260120_184041.dat"
+    },
+    {
+      "filename": "Pico100017_260121_102710.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_112025.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_112538.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_113933.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_114113.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260122_115852.txt",
+      "offset_s": 21605.106,
+      "logger": "pico_20260122_181501.dat"
+    },
+    {
+      "filename": "Pico100017_260204_095858.txt",
+      "offset_s": 21603.67,
+      "logger": "pico_20260204_164637.dat"
+    },
+    {
+      "filename": "Pico100017_260205_180739.txt",
+      "offset_s": 1.434,
+      "logger": "pico_20260205_181554.dat"
+    },
+    {
+      "filename": "Pico100017_260206_180807.txt",
+      "offset_s": 2.841,
+      "logger": "pico_20260206_000000.dat"
+    },
+    {
+      "filename": "Pico100017_260207_012923.txt",
+      "offset_s": 2.841,
+      "logger": "pico_20260206_000000.dat"
+    },
+    {
+      "filename": "Pico100017_260208_012948.txt",
+      "offset_s": 3.009,
+      "logger": "pico_20260207_013445.dat"
+    },
+    {
+      "filename": "Pico100017_260209_013011.txt",
+      "offset_s": 3.94,
+      "logger": "pico_20260208_000001.dat"
+    },
+    {
+      "filename": "Pico100017_260210_013012.txt",
+      "offset_s": 4.904,
+      "logger": "pico_20260209_000008.dat"
+    },
+    {
+      "filename": "Pico100017_260211_013024.txt",
+      "offset_s": 6.1,
+      "logger": "pico_20260210_224519.dat"
+    },
+    {
+      "filename": "Pico100017_260212_013028.txt",
+      "offset_s": 6.547,
+      "logger": "pico_20260211_000002.dat"
+    },
+    {
+      "filename": "Pico100017_260308_184208.txt",
+      "offset_s": 11.449,
+      "logger": "pico_20260308_184456.dat"
+    },
+    {
+      "filename": "Pico100017_260308_192137.txt",
+      "offset_s": 11.449,
+      "logger": "pico_20260308_184456.dat"
+    },
+    {
+      "filename": "Pico100017_260310_145905.txt",
+      "offset_s": 11.753,
+      "logger": "pico_20260310_150110.dat"
+    }
+  ],
+  "pico017_spectra": [
+    {
+      "filename": "Pico100017_260119_123114spectra.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_132315spectra.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_135745spectra.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_143936spectra.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260119_161342spectra.txt",
+      "offset_s": 21604.061,
+      "logger": "pico_20260119_201924.dat"
+    },
+    {
+      "filename": "Pico100017_260120_123631spectra.txt",
+      "offset_s": 21603.866,
+      "logger": "pico_20260120_184041.dat"
+    },
+    {
+      "filename": "Pico100017_260120_192125spectra.txt",
+      "offset_s": 21603.866,
+      "logger": "pico_20260120_184041.dat"
+    },
+    {
+      "filename": "Pico100017_260121_102710spectra.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_112025spectra.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_112538spectra.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_113933spectra.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260121_114113spectra.txt",
+      "offset_s": 21604.639,
+      "logger": "pico_20260121_172759.dat"
+    },
+    {
+      "filename": "Pico100017_260122_115852spectra.txt",
+      "offset_s": 21605.106,
+      "logger": "pico_20260122_181501.dat"
+    },
+    {
+      "filename": "Pico100017_260204_095858spectra.txt",
+      "offset_s": 21603.67,
+      "logger": "pico_20260204_164637.dat"
+    },
+    {
+      "filename": "Pico100017_260205_180739spectra.txt",
+      "offset_s": 1.434,
+      "logger": "pico_20260205_181554.dat"
+    },
+    {
+      "filename": "Pico100017_260206_180807spectra.txt",
+      "offset_s": 2.841,
+      "logger": "pico_20260206_000000.dat"
+    },
+    {
+      "filename": "Pico100017_260207_012923spectra.txt",
+      "offset_s": 2.841,
+      "logger": "pico_20260206_000000.dat"
+    },
+    {
+      "filename": "Pico100017_260208_012948spectra.txt",
+      "offset_s": 3.009,
+      "logger": "pico_20260207_013445.dat"
+    },
+    {
+      "filename": "Pico100017_260209_013011spectra.txt",
+      "offset_s": 3.94,
+      "logger": "pico_20260208_000001.dat"
+    },
+    {
+      "filename": "Pico100017_260210_013012spectra.txt",
+      "offset_s": 4.904,
+      "logger": "pico_20260209_000008.dat"
+    },
+    {
+      "filename": "Pico100017_260211_013024spectra.txt",
+      "offset_s": 6.1,
+      "logger": "pico_20260210_224519.dat"
+    },
+    {
+      "filename": "Pico100017_260212_013028spectra.txt",
+      "offset_s": 6.547,
+      "logger": "pico_20260211_000002.dat"
+    },
+    {
+      "filename": "Pico100017_260308_184208spectra.txt",
+      "offset_s": 11.449,
+      "logger": "pico_20260308_184456.dat"
+    },
+    {
+      "filename": "Pico100017_260308_192137spectra.txt",
+      "offset_s": 11.449,
+      "logger": "pico_20260308_184456.dat"
+    },
+    {
+      "filename": "Pico100017_260310_145905spectra.txt",
+      "offset_s": 11.753,
+      "logger": "pico_20260310_150110.dat"
+    }
+  ]
+}

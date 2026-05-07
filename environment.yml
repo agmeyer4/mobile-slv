@@ -1,0 +1,23 @@
+name: mobile-slv
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  # core data / numerics
+  - numpy
+  - pandas
+  - scipy
+  # plotting
+  - matplotlib
+  - ipympl
+  - cartopy
+  - plotly
+  # notebook
+  - ipywidgets
+  - jupyterlab
+  # geo / web
+  - folium
+  - requests
+  # dev tools
+  - nbstripout
