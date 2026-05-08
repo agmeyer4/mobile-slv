@@ -1,7 +1,7 @@
 {
   "metadata": {
     "calibration_date": "2026-02-12",
-    "generated_utc": "2026-05-08T04:13",
+    "generated_utc": "2026-05-08T18:14",
     "ch4_pw_threshold_ppm": 6.0,
     "c2h6_method": "peak-alignment (scipy.signal.find_peaks on Ultra460, \u00b110 s window)",
     "formula": "linear: cal=(col_in*scale_in - intercept)/slope; piecewise_linear: low formula if col_in<threshold_ppm, else high formula"
