@@ -32,13 +32,22 @@ def apply_corrections(df: pd.DataFrame, corrections: list) -> pd.DataFrame:
     for corr in corrections:
         col_in  = corr["col_in"]
         col_out = corr["col_out"]
-        scale   = corr.get("scale_in", 1.0)
-        sl      = corr["slope"]
-        ic      = corr["intercept"]
         if col_in not in df.columns:
             continue
-        measured = df[col_in] * scale
-        df[col_out] = (measured - ic) / sl
+        corr_type = corr.get("type", "linear")
+        if corr_type == "linear":
+            scale = corr.get("scale_in", 1.0)
+            df[col_out] = (df[col_in] * scale - corr["intercept"]) / corr["slope"]
+        elif corr_type == "piecewise_linear":
+            threshold = corr["threshold_ppm"]
+            lo  = corr["low"]
+            hi  = corr["high"]
+            raw = df[col_in]
+            below  = raw < threshold
+            result = pd.Series(np.nan, index=df.index, dtype=float)
+            result[below]  = (raw[below]  - lo["intercept"]) / lo["slope"]
+            result[~below] = (raw[~below] - hi["intercept"]) / hi["slope"]
+            df[col_out] = result
     return df
 
 
@@ -62,10 +71,18 @@ def run(out_dir: Path, coefs_path: Path):
 
     print("  Corrections to apply:")
     for corr in corrections:
-        sc = f"×{corr['scale_in']}" if corr.get("scale_in", 1.0) != 1.0 else ""
-        print(f"    {corr['gas']:<6} {corr['instrument']:<12}  "
-              f"{corr['col_in']}{sc} → {corr['col_out']}  "
-              f"(slope={corr['slope']:.5f}, int={corr['intercept']:.4f}, R²={corr['r2']:.4f})")
+        corr_type = corr.get("type", "linear")
+        if corr_type == "linear":
+            sc = f"×{corr['scale_in']}" if corr.get("scale_in", 1.0) != 1.0 else ""
+            print(f"    {corr['gas']:<6} {corr['instrument']:<12}  "
+                  f"{corr['col_in']}{sc} → {corr['col_out']}  "
+                  f"(slope={corr['slope']:.5f}, int={corr['intercept']:.4f}, R²={corr['r2']:.4f})")
+        elif corr_type == "piecewise_linear":
+            lo = corr["low"];  hi = corr["high"];  t = corr["threshold_ppm"]
+            print(f"    {corr['gas']:<6} {corr['instrument']:<12}  "
+                  f"{corr['col_in']} → {corr['col_out']}  "
+                  f"(piecewise <{t} ppm: sl={lo['slope']:.5f}/int={lo['intercept']:.4f}; "
+                  f"≥{t} ppm: sl={hi['slope']:.5f}/int={hi['intercept']:.4f})")
     print()
 
     files = sorted(_MERGED.glob("*.csv"))
