@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "calibration_date": "2026-02-12",
+    "generated_utc": "2026-05-08T01:29",
+    "c2h6_method": "peak-alignment (scipy.signal.find_peaks on Ultra460, \u00b110 s window)",
+    "formula": "calibrated = (col_in * scale_in - intercept) / slope"
+  },
+  "corrections": [
+    {
+      "gas": "CH4",
+      "instrument": "Ultra460",
+      "col_in": "CH4_ppm_Ultra460",
+      "col_out": "CH4_ppm_Ultra460_cal",
+      "scale_in": 1.0,
+      "slope": 0.95710458,
+      "intercept": 0.18115829,
+      "r2": 0.999974
+    },
+    {
+      "gas": "CH4",
+      "instrument": "Ultra321",
+      "col_in": "CH4_ppm_Ultra321",
+      "col_out": "CH4_ppm_Ultra321_cal",
+      "scale_in": 1.0,
+      "slope": 1.0091282,
+      "intercept": 0.12699945,
+      "r2": 0.99989
+    },
+    {
+      "gas": "CH4",
+      "instrument": "Pico017",
+      "col_in": "CH4_ppm_Pico017",
+      "col_out": "CH4_ppm_Pico017_cal",
+      "scale_in": 1.0,
+      "slope": 0.98609151,
+      "intercept": -0.31276053,
+      "r2": 0.999913
+    },
+    {
+      "gas": "C3H8",
+      "instrument": "Ultra321",
+      "col_in": "C3H8_ppm_Ultra321",
+      "col_out": "C3H8_ppm_Ultra321_cal",
+      "scale_in": 1.0,
+      "slope": 0.88903429,
+      "intercept": -0.15545561,
+      "r2": 0.999814
+    },
+    {
+      "gas": "C2H6",
+      "instrument": "Pico017",
+      "col_in": "C2H6_ppb_Pico017",
+      "col_out": "C2H6_ppb_Pico017_cal",
+      "scale_in": 1.0,
+      "slope": 0.87160857,
+      "intercept": 17.456215,
+      "r2": 0.996786
+    },
+    {
+      "gas": "C2H6",
+      "instrument": "Ultra321",
+      "col_in": "C2H6_ppm_Ultra321",
+      "col_out": "C2H6_ppb_Ultra321_cal",
+      "scale_in": 1000.0,
+      "slope": 0.97413908,
+      "intercept": -138.339621,
+      "r2": 0.993813
+    }
+  ]
+}
