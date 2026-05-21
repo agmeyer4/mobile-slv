@@ -4,7 +4,7 @@
 
 This repository is frozen as the **Data Engineering / ETL pipeline** for the Salt Lake Valley Winter Mobile Campaign 2026 (Jan 15 – Mar 10). It handles raw data extraction, timestamp correction, cleaning, and lag verification — **nothing else**.
 
-**The final ETL output is `recleaned/`.** Daily merging, calibration, and all scientific analysis have moved to [`slv-hydrocarbon-analysis`](https://github.com/agmeyer4/slv-hydrocarbon-analysis), which reads directly from `recleaned/`. Do not add analysis or merge code here.
+**The final ETL output is `recleaned/`.** Daily merging, calibration, and all scientific analysis have moved to [`mobile-hydrocarbon-analysis`](https://github.com/agmeyer4/mobile-hydrocarbon-analysis), which reads directly from `recleaned/`. Do not add analysis or merge code here.
 
 ---
 
@@ -18,7 +18,7 @@ nbstripout --install                  # strip notebook outputs on git add (run o
 
 ## Data Lineage
 
-All data lives outside this repo on CHPC. Raw files are read-only; each ETL step writes to its own directory. `recleaned/` is the handoff point for `slv-hydrocarbon-analysis`.
+All data lives outside this repo on CHPC. Raw files are read-only; each ETL step writes to its own directory. `recleaned/` is the handoff point for `mobile-hydrocarbon-analysis`.
 
 **All `TIMESTAMP` values throughout this pipeline are UTC.** They are stored as timezone-naive strings (ISO 8601, no offset suffix); there is no daylight saving ambiguity. Interpret every `TIMESTAMP` value as UTC.
 
@@ -57,7 +57,7 @@ Step 4 → recleaned/   ← FINAL ETL OUTPUT
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/recleaned/
     Per-file lag offsets applied to cleaned/ files. One directory per instrument stream.
     Picarro, Sprinter, and Toughbook copied unchanged (trusted timestamps).
-    This is the handoff to slv-hydrocarbon-analysis for merging, calibration, and analysis.
+    This is the handoff to mobile-hydrocarbon-analysis for merging, calibration, and analysis.
 ```
 
 ---
@@ -87,7 +87,7 @@ Step 4 → recleaned/   ← FINAL ETL OUTPUT
   Results saved to `offsets/*_lag.json` and `offsets/*_rejected.json`.
 
 Notebooks 03–05 have been moved to `archive_legacy_analysis/` and are superseded by
-`slv-hydrocarbon-analysis`.
+`mobile-hydrocarbon-analysis`.
 
 ---
 
@@ -101,7 +101,7 @@ ETL helper scripts in `src/`:
 - `clean_gps.py` — parse Toughbook NMEA GPS files
 - `clean_anem.py` — parse Toughbook Trisonica anemometer files
 
-`merge_daily.py` has been moved to `archive_legacy_analysis/` — use it as a starting point in `slv-hydrocarbon-analysis`.
+`merge_daily.py` has been moved to `archive_legacy_analysis/` — use it as a starting point in `mobile-hydrocarbon-analysis`.
 
 ---
 
