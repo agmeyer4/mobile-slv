@@ -20,32 +20,41 @@ nbstripout --install                  # strip notebook outputs on git add (run o
 
 All data lives outside this repo on CHPC. Raw files are read-only; each ETL step writes to its own directory. `recleaned/` is the handoff point for `slv-hydrocarbon-analysis`.
 
+For full instrument descriptions, deployment schedule, and file format details, see [`raw/README.md`](../lin-group24/agm/Mobile_SLV/Data/2026/raw/README.md) — that is the authoritative source for the raw data.
+
 ```
 Raw (read-only)
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/raw/
-    ├── WYO_picarro/          ← trusted reference, EPOCH_TIME column
-    ├── WYO_sprinter/         ← trusted GPS/met
-    ├── WYO_aerisultra460/Raw/
-    ├── LANL_aerisultra321/Raw/ + Spectra/   ← wrong timestamps
-    ├── LANL_aerispico017/Raw/ + Spectra/    ← wrong timestamps
-    ├── LANL_rpi/             ← dual-timestamp logger (correct Epoch_time)
-    ├── LANL_toughbook/       ← dual-timestamp logger (correct Epoch_time)
-    └── UOU_LGR/
+    ├── WYO_picarro/            ← trusted reference (GPS-synced UTC)
+    ├── WYO_sprinter/           ← trusted GPS/met
+    ├── WYO_aerisultra460/      ← usually correct timestamps, verified in Step 3
+    ├── LANL_aerisultra321/     ← WRONG internal clock — corrected in Step 1
+    ├── LANL_aerispico017/      ← WRONG internal clock — corrected in Step 1
+    ├── LANL_rpi/               ← dual-timestamp logger used to correct Ultra321/Pico017 (WYO)
+    ├── LANL_toughbook/         ← dual-timestamp logger used to correct Ultra321/Pico017 (MML)
+    └── UOU_LGR/                ← trusted timestamps
 
 Step 1 → ts_corrected/
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/ts_corrected/
-    Aeris Raw + Spectra files with corrected UTC timestamps applied.
-    Per-file offsets saved to offsets/ts_correction_offsets.json.
+    Corrects the Aeris Ultra321 and Pico017 internal clocks using the co-located
+    RPi/Toughbook logger files. Offsets are per-file (not global) and saved to
+    offsets/ts_correction_offsets.json.
+
+    Only Ultra321 and Pico017 files are actually rewritten here.
+    WYO_picarro and WYO_sprinter are symlinked directly to raw/ (no correction needed).
+    Ultra460, Toughbook, and LGR are copied as-is (trusted timestamps).
 
 Step 2 → cleaned/
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/cleaned/
-    Standardized CSVs with uniform DateTimeIndex.
+    All streams standardized to uniform CSV format with a TIMESTAMP index.
+    No lag offsets applied yet — this is the input for cross-correlation in Step 3.
 
 Step 3 (no write) — cross-correlation results saved to offsets/*_lag.json
 
 Step 4 → recleaned/   ← FINAL ETL OUTPUT
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/recleaned/
-    Re-cleaned with per-file lag offsets applied. One directory per instrument stream.
+    Per-file lag offsets applied to cleaned/ files. One directory per instrument stream.
+    Picarro, Sprinter, and Toughbook copied unchanged (trusted timestamps).
     This is the handoff to slv-hydrocarbon-analysis for merging, calibration, and analysis.
 ```
 
@@ -55,10 +64,10 @@ Step 4 → recleaned/   ← FINAL ETL OUTPUT
 
 | Step | Output dir | Tool |
 |---|---|---|
-| 1. Timestamp correction | `ts_corrected/` | `notebooks/01_timestamp_correction.ipynb` |
+| 1. Aeris internal clock correction | `ts_corrected/` | `notebooks/01_timestamp_correction.ipynb` |
 | 2. First clean | `cleaned/` | `mobilelab/preprocess/clean.py` |
-| 3. Lag verification | — (offsets JSON) | `notebooks/02_verify_offsets.ipynb` |
-| 4. Second clean (with lags) | `recleaned/` | `mobilelab/preprocess/apply_offsets.py` |
+| 3. Lag verification (cross-correlation) | — (offsets JSON) | `notebooks/02_verify_offsets.ipynb` |
+| 4. Second clean with lag offsets | `recleaned/` | `mobilelab/preprocess/apply_offsets.py` |
 
 **All four steps are complete.** `recleaned/` contains the final per-instrument CSVs for all deployment days (Jan 19–22, Feb 2–12, Mar 8, Mar 10).
 
