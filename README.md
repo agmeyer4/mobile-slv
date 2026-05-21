@@ -20,12 +20,14 @@ nbstripout --install                  # strip notebook outputs on git add (run o
 
 All data lives outside this repo on CHPC. Raw files are read-only; each ETL step writes to its own directory. `recleaned/` is the handoff point for `slv-hydrocarbon-analysis`.
 
+**All `TIMESTAMP` values throughout this pipeline are UTC.** They are stored as timezone-naive strings (ISO 8601, no offset suffix); there is no daylight saving ambiguity. Interpret every `TIMESTAMP` value as UTC.
+
 For full instrument descriptions, deployment schedule, and file format details, see [`raw/README.md`](../lin-group24/agm/Mobile_SLV/Data/2026/raw/README.md) — that is the authoritative source for the raw data.
 
 ```
 Raw (read-only)
 /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/raw/
-    ├── WYO_picarro/            ← trusted reference (GPS-synced UTC)
+    ├── WYO_picarro/            ← trusted reference (~2s accuracy, used as UTC truth)
     ├── WYO_sprinter/           ← trusted GPS/met
     ├── WYO_aerisultra460/      ← usually correct timestamps, verified in Step 3
     ├── LANL_aerisultra321/     ← WRONG internal clock — corrected in Step 1
