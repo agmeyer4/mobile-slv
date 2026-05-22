@@ -20,7 +20,7 @@ STAGE_02_SOURCES = {                               # input directory per instrum
     # from raw (no UTC correction applied)
     'WYO_picarro':        RAW_DIR / 'WYO_picarro',
     'WYO_aerisultra460':  RAW_DIR / 'WYO_aerisultra460', 
-    'UOU_LGR':            RAW_DIR / 'UOU_LGR',
+    'UOU_LGR':            RAW_DIR / 'UOU_LGR' / 'final',
     'WYO_PTR-TOF':        RAW_DIR / 'WYO_PTR-TOF',
     'WYO_sprinter':       RAW_DIR / 'WYO_sprinter',
     'Extra_GPS':          RAW_DIR / 'Extra_GPS',
