@@ -190,11 +190,17 @@ def read_spectra(spectra_path, raw_dir) -> pd.DataFrame | None:
 
     col_names = instrument_cols + ["rd0", "rd1"] + [f"spec_{i:04d}" for i in range(1, n_spec + 1)]
     df.columns = col_names
+    # Consolidate the fragmented per-column memory blocks that result from reading
+    # with dtype={0: str} — without this, adding any new column triggers a
+    # PerformanceWarning and CSV writing becomes extremely slow.
+    df = df.copy()
 
     ts = pd.to_datetime(df["Time Stamp"].str.strip(), format=AERIS_TS_FORMAT, errors="coerce")
-    df["TIMESTAMP"] = ts
-    df = df.dropna(subset=["TIMESTAMP"]).set_index("TIMESTAMP")
-    df.index = df.index.tz_localize("UTC")
+    valid = ts.notna()
+    df = df[valid].copy()
+    df.index = ts[valid].dt.tz_localize("UTC")
+    df.index.name = "TIMESTAMP"
+    df = df.drop(columns=["Time Stamp"])  # redundant — already captured in the index
     return df if not df.empty else None
 
 
