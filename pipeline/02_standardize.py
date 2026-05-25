@@ -7,7 +7,7 @@ OUTPUT: STAGE_02_DIR/{instrument}/  — one CSV per input file, same filenames
 What "standardized" means here:
   - Index is TIMESTAMP (UTC, tz-aware +00:00)
   - Column names are clean and consistent across runs (see RENAME maps in standardize.py)
-  - Format is always CSV (even for Spectra, which arrive as headerless .txt)
+  - Gas/met output: CSV. Spectra/Spectralite output: Parquet (fast, ~3–5x smaller than CSV).
 
 Output directory structure:
   Aeris gas/met  →  {instrument}/Raw/         (mirrors the Raw/ subdirectory in the source)
@@ -179,6 +179,8 @@ for instrument, src_dir in STAGE_02_SOURCES.items():
     print(f"{'═' * 60}")
 
     n_ok = n_empty = n_err = 0
+    empty_files: list[str] = []
+    error_files: list[dict] = []
     for i, path in enumerate(files):
         prog = f"({i+1}/{n})"
         try:
@@ -186,6 +188,7 @@ for instrument, src_dir in STAGE_02_SOURCES.items():
             if df is None or df.empty:
                 print(f"  {prog}  EMPTY   {path.name}")
                 n_empty += 1
+                empty_files.append(path.name)
                 continue
             out_path = out_dir / (path.stem + ".csv")
             df.to_csv(out_path)
@@ -194,6 +197,7 @@ for instrument, src_dir in STAGE_02_SOURCES.items():
         except Exception as e:
             print(f"  {prog}  ERROR   {path.name}  — {e}")
             n_err += 1
+            error_files.append({"file": path.name, "error": str(e)})
 
     print(f"\n  Done — ok: {n_ok}", end="")
     if n_empty:
@@ -201,7 +205,12 @@ for instrument, src_dir in STAGE_02_SOURCES.items():
     if n_err:
         print(f"  errors: {n_err}", end="")
     print()
-    manifest_stats[label.rstrip("/")] = {"ok": n_ok, "empty": n_empty, "errors": n_err}
+    entry: dict = {"ok": n_ok, "empty": n_empty, "errors": n_err}
+    if empty_files:
+        entry["empty_files"] = empty_files
+    if error_files:
+        entry["error_files"] = error_files
+    manifest_stats[label.rstrip("/")] = entry
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Part 2 — Spectra / Spectralite files
@@ -232,6 +241,8 @@ for instrument, scfg in SPECTRA_CONFIG.items():
     print(f"{'═' * 60}")
 
     n_ok = n_empty = n_err = 0
+    empty_files = []
+    error_files = []
     for i, path in enumerate(files):
         prog = f"({i+1}/{n})"
         try:
@@ -239,14 +250,16 @@ for instrument, scfg in SPECTRA_CONFIG.items():
             if df is None or df.empty:
                 print(f"  {prog}  EMPTY   {path.name}")
                 n_empty += 1
+                empty_files.append(path.name)
                 continue
-            out_path = out_dir / (path.stem + ".csv")
-            df.to_csv(out_path)
+            out_path = out_dir / (path.stem + ".parquet")
+            df.to_parquet(out_path)
             print(f"  {prog}  OK      {path.name}  [{len(df):,} rows]")
             n_ok += 1
         except Exception as e:
             print(f"  {prog}  ERROR   {path.name}  — {e}")
             n_err += 1
+            error_files.append({"file": path.name, "error": str(e)})
 
     print(f"\n  Done — ok: {n_ok}", end="")
     if n_empty:
@@ -254,7 +267,12 @@ for instrument, scfg in SPECTRA_CONFIG.items():
     if n_err:
         print(f"  errors: {n_err}", end="")
     print()
-    manifest_stats[spec_label] = {"ok": n_ok, "empty": n_empty, "errors": n_err}
+    entry = {"ok": n_ok, "empty": n_empty, "errors": n_err}
+    if empty_files:
+        entry["empty_files"] = empty_files
+    if error_files:
+        entry["error_files"] = error_files
+    manifest_stats[spec_label] = entry
 
 # ── Write run manifest ────────────────────────────────────────────────────────
 # Records the git commit and per-instrument counts so any output directory can

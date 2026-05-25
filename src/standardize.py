@@ -171,7 +171,10 @@ def read_spectra(spectra_path, raw_dir) -> pd.DataFrame | None:
     Read a headerless Aeris Spectra/Spectralite .txt file.
     Column names are derived from paired Raw files in raw_dir. The 'Time Stamp'
     column is parsed to a UTC TIMESTAMP index identical to the gas/met readers.
+    Returns None for 0-byte files (instrument wrote nothing).
     """
+    if spectra_path.stat().st_size == 0:
+        return None
     instrument_cols = _instrument_cols_from_raw(raw_dir)
     df = pd.read_csv(spectra_path, header=None, dtype={0: str}, on_bad_lines="skip")
     if df.empty:
