@@ -28,3 +28,6 @@ STAGE_02_SOURCES = {                               # input directory per instrum
 
 # ── Stage 03: instrument alignment ───────────────────────────────────────────
 STAGE_03_DIR = DATA_ROOT / '03_instrument_aligned'   # output directory; reads from STAGE_02_DIR
+
+# ── Stage 04: daily merge ─────────────────────────────────────────────────────
+STAGE_04_DIR = DATA_ROOT / '04_daily'   # output directory; reads from STAGE_03_DIR

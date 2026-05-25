@@ -1,9 +1,31 @@
 """
 Per-instrument file reader functions for Stage 02 (standardize).
 
-Each reader returns a DataFrame with a tz-naive UTC TIMESTAMP index and clean
-column names, or None for empty/unparseable files. These functions are pure —
-no config dependency.
+Each reader returns a DataFrame with a tz-aware UTC TIMESTAMP index and all original
+columns preserved. A partial rename is applied: science columns that are compared
+cross-instrument get clean names (e.g. CH4_ppm); everything else keeps its original
+name. The ts_status column ("utc_corrected" | "no_coverage" | "trusted") is added
+by the pipeline loop, not here.
+
+Public API
+----------
+Readers:
+  read_aeris_raw(path, rename)   — Aeris Raw and Eng .txt files (1-line header + CSV)
+  read_picarro(path)             — Picarro .dat files
+  read_lgr(path)                 — LGR final .dat files
+  read_sprinter(path)            — Sprinter .csv files
+  read_spectra(spectra_path, raw_dir) — headerless Aeris Spectra/Spectralite .txt files
+
+Rename dicts (partial — apply known cross-instrument science names, keep all other cols):
+  ULTRA321_RENAME      — Raw gas/met columns for Ultra321
+  ULTRA321_ENG_RENAME  — Eng gas/met + wet columns for Ultra321
+  PICO017_RENAME       — Raw gas/met columns for Pico017
+  PICO017_ENG_RENAME   — Eng gas/met + wet columns for Pico017
+  ULTRA460_RENAME      — Raw gas/met columns for Ultra460
+  ULTRA460_ENG_RENAME  — Eng gas/met columns for Ultra460
+  PICARRO_RENAME       — Picarro gas columns
+  LGR_RENAME           — LGR raw gas columns
+  SPRINTER_RENAME      — Sprinter GPS/met columns
 """
 
 import pandas as pd
@@ -15,6 +37,11 @@ AERIS_TS_FORMAT = "%m/%d/%Y %H:%M:%S.%f"
 _N_SPECTRA_DIAGNOSTIC = 2
 
 # ── Column rename maps ────────────────────────────────────────────────────────
+# These are PARTIAL renames — only science columns that analysis compares
+# cross-instrument are standardised. All other columns pass through with their
+# original names. Duplicate column handling: pandas auto-mangles duplicates to
+# col, col.1, col.2 on read; those mangled names are not in these maps and pass
+# through unchanged.
 
 ULTRA321_RENAME = {
     "P (mbars)":  "P_mbar",
@@ -23,6 +50,13 @@ ULTRA321_RENAME = {
     "H2O (ppm)":  "H2O_ppm",
     "C2H6 (ppm)": "C2H6_ppm",
     "C3H8 (ppm)": "C3H8_ppm",
+}
+
+ULTRA321_ENG_RENAME = {
+    **ULTRA321_RENAME,
+    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
+    "C2H6 (ppm)-Wet": "C2H6_ppm_wet",
+    "C3H8 (ppm)-Wet": "C3H8_ppm_wet",
 }
 
 PICO017_RENAME = {
@@ -35,6 +69,12 @@ PICO017_RENAME = {
     "C2/C1":      "C2C1",
 }
 
+PICO017_ENG_RENAME = {
+    **PICO017_RENAME,
+    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
+    "C2H6 (ppb)-Wet": "C2H6_ppb_wet",
+}
+
 ULTRA460_RENAME = {
     "P (mbars)":  "P_mbar",
     "Tgas(degC)": "Tgas_C",
@@ -43,6 +83,10 @@ ULTRA460_RENAME = {
     "C2H6 (ppb)": "C2H6_ppb",
     "R":          "R",
     "C2/C1":      "C2C1",
+}
+
+ULTRA460_ENG_RENAME = {
+    **ULTRA460_RENAME,
 }
 
 PICARRO_RENAME = {
@@ -77,14 +121,19 @@ SPRINTER_RENAME = {
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _finalize(df, ts_series, rename):
+    """
+    Set the TIMESTAMP index, apply partial column renames, return all columns.
+    Raises ValueError if none of the expected science columns are present
+    (guards against misidentified files).
+    """
     df = df.copy()
     df["TIMESTAMP"] = ts_series
     df = df.dropna(subset=["TIMESTAMP"]).set_index("TIMESTAMP")
     df.index = df.index.tz_localize("UTC")
-    keep = {k: v for k, v in rename.items() if k in df.columns}
-    if not keep:
+    found = {k: v for k, v in rename.items() if k in df.columns}
+    if not found:
         raise ValueError(f"No expected columns found. Got: {list(df.columns)[:10]}")
-    return df[list(keep.keys())].rename(columns=keep)
+    return df.rename(columns=found)
 
 
 def _sprinter_ts(df):
@@ -135,7 +184,12 @@ def _instrument_cols_from_raw(raw_dir) -> list[str]:
 # ── Public reader functions ───────────────────────────────────────────────────
 
 def read_aeris_raw(path, rename: dict) -> pd.DataFrame:
-    """Read an Aeris Raw .txt file (1-line header + CSV)."""
+    """
+    Read an Aeris Raw or Eng .txt file (1-line header + CSV).
+    All columns are preserved; rename maps the science columns to clean names.
+    Duplicate column names (e.g. two GPS Time columns in Ultra321 Eng) are
+    auto-mangled by pandas to col, col.1, etc.
+    """
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
     ts = pd.to_datetime(df["Time Stamp"].str.strip(), format=AERIS_TS_FORMAT, errors="coerce")
@@ -193,9 +247,7 @@ def read_spectra(spectra_path, raw_dir) -> pd.DataFrame | None:
 
     col_names = instrument_cols + ["rd0", "rd1"] + [f"spec_{i:04d}" for i in range(1, n_spec + 1)]
     df.columns = col_names
-    # Consolidate the fragmented per-column memory blocks that result from reading
-    # with dtype={0: str} — without this, adding any new column triggers a
-    # PerformanceWarning and CSV writing becomes extremely slow.
+    # Consolidate fragmented memory blocks from mixed-dtype read to avoid PerformanceWarning
     df = df.copy()
 
     ts = pd.to_datetime(df["Time Stamp"].str.strip(), format=AERIS_TS_FORMAT, errors="coerce")
@@ -203,7 +255,7 @@ def read_spectra(spectra_path, raw_dir) -> pd.DataFrame | None:
     df = df[valid].copy()
     df.index = ts[valid].dt.tz_localize("UTC")
     df.index.name = "TIMESTAMP"
-    df = df.drop(columns=["Time Stamp"])  # redundant — already captured in the index
+    df = df.drop(columns=["Time Stamp"])
     return df if not df.empty else None
 
 
