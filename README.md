@@ -16,7 +16,7 @@ nbstripout --install                  # strip notebook outputs on git add (run o
 
 ## Data lineage
 
-Raw files live on CHPC and are **read-only**. Each pipeline stage writes to its own output directory. All paths are defined in `config.py` — do not hardcode paths in scripts.
+Raw files live on CHPC and are **read-only**. Each pipeline stage writes to its own output directory. All paths are configured in `config/paths.yaml` and exposed as `Path` objects by `config/paths.py` — do not hardcode data paths in scripts. Instrument readers and the task registry live in `src/readers.py`. Column rename maps live in `config/column_maps.yaml`.
 
 ```
 raw/  (read-only)
@@ -94,7 +94,7 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 | Module | Used by | Purpose |
 |---|---|---|
 | `aeris_clock.py` | Stage 01 | Clock offset computation and application for Aeris instruments |
-| `standardize.py` | Stage 02 | Per-instrument file readers; all column rename maps |
+| `readers.py` | Stage 02 | Per-instrument file readers, rename maps, `INSTRUMENT_TASKS` registry |
 
 Stage 03 helpers (`_git_info`, `save_lag_offsets`, `cross_correlate`, `is_mml`, etc.) live directly in the notebook — no separate src/ module.
 

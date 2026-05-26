@@ -1,7 +1,7 @@
 """
 Stage 02: Standardize files from all instruments.
 
-INPUT:  per-instrument source directories defined in STAGE_02_SOURCES (config.py),
+INPUT:  per-instrument source directories defined in STAGE_02_SOURCES (paths.py),
         including no_coverage/ subdirs from Stage 01.
 OUTPUT: STAGE_02_DIR/{instrument}/{subdir}/{stem}.parquet
 
@@ -12,19 +12,10 @@ What "standardized" means:
   - ts_status column added: "utc_corrected" | "no_coverage" | "trusted"
   - Format is always Parquet (column projection supported via pd.read_parquet columns=)
 
-Output directory structure mirrors Stage 01 for LANL instruments:
-  {instrument}/Raw/             corrected gas/met
-  {instrument}/Raw/no_coverage/ uncorrected gas/met (instrument clock, ~MT)
-  {instrument}/Eng/             corrected engineering + GPS
-  {instrument}/Eng/no_coverage/ uncorrected engineering + GPS
-  {instrument}/Spectra/         corrected spectra (parquet)
-  {instrument}/Spectra/no_coverage/
-  {instrument}/Spectralite/     WYO_aerisultra460 spectralite (parquet)
-
-Non-Aeris instruments write flat under {instrument}/ (no subdirectory).
-
-WYO_aerisultra460 has trusted timestamps; no no_coverage subdirs.
-WYO_PTR-TOF and Extra_GPS are logged as stubs and skipped.
+Tasks are built from INSTRUMENT_TASKS in src/readers.py. Adding a new instrument:
+  1. Add its entry to INSTRUMENT_TASKS in src/readers.py
+  2. Add its source path to STAGE_02_SOURCES in paths.py
+  Instruments in STAGE_02_SOURCES with no INSTRUMENT_TASKS entry are logged as stubs.
 
 A run_manifest.json is written to STAGE_02_DIR/ at the end of each run.
 
@@ -40,96 +31,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import STAGE_02_SOURCES, STAGE_02_DIR, STAGE_01_DIR, RAW_DIR, REPO_ROOT
-from src.standardize import (
-    read_aeris_raw, read_picarro, read_lgr, read_sprinter, read_spectra,
-    ULTRA321_RENAME, ULTRA321_ENG_RENAME,
-    PICO017_RENAME,  PICO017_ENG_RENAME,
-    ULTRA460_RENAME, ULTRA460_ENG_RENAME,
-)
+from config.paths import STAGE_02_SOURCES, STAGE_02_DIR, REPO_ROOT
+from src.readers import INSTRUMENT_TASKS, make_spectra_reader
 
-# ── Source directory aliases ───────────────────────────────────────────────────
-_U321 = STAGE_01_DIR / "LANL_aerisultra321"
-_P017 = STAGE_01_DIR / "LANL_aerispico017"
-_U460 = RAW_DIR / "WYO_aerisultra460"
+# ── Task list (built from registry) ───────────────────────────────────────────
 
-# ── Task list ─────────────────────────────────────────────────────────────────
-# Each task is one glob pattern → one output subdirectory.
-#
-# Keys:
-#   instrument  output lives under STAGE_02_DIR/{instrument}/
-#   src_dir     base directory for the glob
-#   glob        glob pattern relative to src_dir
-#   reader      callable(path) → DataFrame | None
-#   out_subdir  subdirectory under {instrument}/  (empty string = flat)
-#   ts_status   "utc_corrected" | "no_coverage" | "trusted"
+def _resolve_reader(spec, src_dir):
+    if "reader" in spec:
+        return spec["reader"]
+    return make_spectra_reader(src_dir / spec["spectra_raw_subdir"])
 
 TASKS = [
-    # ── LANL_aerisultra321 (source: 01_utc_corrected) ────────────────────────
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Raw/*.txt",              "reader": lambda p: read_aeris_raw(p, ULTRA321_RENAME),
-     "out_subdir": "Raw",              "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Raw/no_coverage/*.txt",  "reader": lambda p: read_aeris_raw(p, ULTRA321_RENAME),
-     "out_subdir": "Raw/no_coverage",  "ts_status": "no_coverage"},
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Eng/*.txt",              "reader": lambda p: read_aeris_raw(p, ULTRA321_ENG_RENAME),
-     "out_subdir": "Eng",              "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Eng/no_coverage/*.txt",  "reader": lambda p: read_aeris_raw(p, ULTRA321_ENG_RENAME),
-     "out_subdir": "Eng/no_coverage",  "ts_status": "no_coverage"},
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Spectra/*.txt",          "reader": lambda p: read_spectra(p, _U321 / "Raw"),
-     "out_subdir": "Spectra",          "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerisultra321", "src_dir": _U321,
-     "glob": "Spectra/no_coverage/*.txt", "reader": lambda p: read_spectra(p, _U321 / "Raw"),
-     "out_subdir": "Spectra/no_coverage", "ts_status": "no_coverage"},
-
-    # ── LANL_aerispico017 (source: 01_utc_corrected) ─────────────────────────
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Raw/*.txt",              "reader": lambda p: read_aeris_raw(p, PICO017_RENAME),
-     "out_subdir": "Raw",              "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Raw/no_coverage/*.txt",  "reader": lambda p: read_aeris_raw(p, PICO017_RENAME),
-     "out_subdir": "Raw/no_coverage",  "ts_status": "no_coverage"},
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Eng/*.txt",              "reader": lambda p: read_aeris_raw(p, PICO017_ENG_RENAME),
-     "out_subdir": "Eng",              "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Eng/no_coverage/*.txt",  "reader": lambda p: read_aeris_raw(p, PICO017_ENG_RENAME),
-     "out_subdir": "Eng/no_coverage",  "ts_status": "no_coverage"},
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Spectra/*.txt",          "reader": lambda p: read_spectra(p, _P017 / "Raw"),
-     "out_subdir": "Spectra",          "ts_status": "utc_corrected"},
-    {"instrument": "LANL_aerispico017", "src_dir": _P017,
-     "glob": "Spectra/no_coverage/*.txt", "reader": lambda p: read_spectra(p, _P017 / "Raw"),
-     "out_subdir": "Spectra/no_coverage", "ts_status": "no_coverage"},
-
-    # ── WYO_aerisultra460 (source: raw — trusted timestamps) ─────────────────
-    {"instrument": "WYO_aerisultra460", "src_dir": _U460,
-     "glob": "Raw/*.txt",              "reader": lambda p: read_aeris_raw(p, ULTRA460_RENAME),
-     "out_subdir": "Raw",              "ts_status": "trusted"},
-    {"instrument": "WYO_aerisultra460", "src_dir": _U460,
-     "glob": "Eng/*.txt",              "reader": lambda p: read_aeris_raw(p, ULTRA460_ENG_RENAME),
-     "out_subdir": "Eng",              "ts_status": "trusted"},
-    {"instrument": "WYO_aerisultra460", "src_dir": _U460,
-     "glob": "Spectralite/*.txt",      "reader": lambda p: read_spectra(p, _U460 / "Raw"),
-     "out_subdir": "Spectralite",      "ts_status": "trusted"},
-
-    # ── WYO_picarro (source: raw) ─────────────────────────────────────────────
-    {"instrument": "WYO_picarro", "src_dir": STAGE_02_SOURCES["WYO_picarro"],
-     "glob": "*.dat", "reader": read_picarro, "out_subdir": "", "ts_status": "trusted"},
-
-    # ── UOU_LGR (source: raw/final) ───────────────────────────────────────────
-    {"instrument": "UOU_LGR", "src_dir": STAGE_02_SOURCES["UOU_LGR"],
-     "glob": "*.dat", "reader": read_lgr, "out_subdir": "", "ts_status": "trusted"},
-
-    # ── WYO_sprinter (source: raw) ────────────────────────────────────────────
-    {"instrument": "WYO_sprinter", "src_dir": STAGE_02_SOURCES["WYO_sprinter"],
-     "glob": "*.csv", "reader": read_sprinter, "out_subdir": "", "ts_status": "trusted"},
+    {"instrument": inst, "src_dir": src, "glob": s["glob"],
+     "reader": _resolve_reader(s, src), "out_subdir": s["out_subdir"], "ts_status": s["ts_status"]}
+    for inst, specs in INSTRUMENT_TASKS.items()
+    for s in specs
+    for src in [STAGE_02_SOURCES[inst]]
 ]
 
-STUBS = ["WYO_PTR-TOF", "Extra_GPS"]
+STUBS = [inst for inst in STAGE_02_SOURCES if inst not in INSTRUMENT_TASKS]
 
 # ── Manifest helper ───────────────────────────────────────────────────────────
 

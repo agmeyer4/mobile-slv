@@ -1,0 +1,28 @@
+data_root: /uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026
+
+dirs:
+  raw:      raw
+  stage_01: 01_utc_corrected
+  stage_02: 02_standardized
+  stage_03: 03_instrument_aligned
+  stage_04: 04_daily
+
+stage_01:
+  instruments: [LANL_aerisultra321, LANL_aerispico017]
+  loggers: [LANL_rpi, LANL_toughbook]
+
+# Paths relative to data_root.
+stage_02_sources:
+  # UTC-corrected by Stage 01
+  LANL_aerisultra321: 01_utc_corrected/LANL_aerisultra321
+  LANL_aerispico017:  01_utc_corrected/LANL_aerispico017
+  # Trusted timestamps — read directly from raw
+  WYO_picarro:        raw/WYO_picarro
+  WYO_aerisultra460:  raw/WYO_aerisultra460
+  UOU_LGR:            raw/UOU_LGR/final
+  WYO_PTR-TOF:        raw/WYO_PTR-TOF
+  WYO_sprinter:       raw/WYO_sprinter
+  Extra_GPS:          raw/Extra_GPS
+  # Toughbook-logged — toughbook clock offset resolved in Stage 03
+  LANL_GPS:           raw/LANL_toughbook/GPS
+  LANL_Anem:          raw/LANL_toughbook/Anem

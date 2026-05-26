@@ -20,5 +20,7 @@ dependencies:
   # geo / web
   - folium
   - requests
+  # config
+  - pyyaml
   # dev tools
   - nbstripout

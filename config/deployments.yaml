@@ -1,0 +1,31 @@
+loggers:
+  LANL_rpi:
+    description: Raspberry Pi, WYO platform
+    platform: WYO
+    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
+
+  LANL_toughbook:
+    description: Toughbook, LANL MML platform
+    platform: LANL_MML
+    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
+    records: [LANL_GPS, LANL_Anem]  # these streams share the toughbook clock
+
+platforms:
+  LANL_MML:
+    description: LANL Mobile Lab
+    logger: LANL_toughbook
+    instruments:
+      - LANL_aerispico017
+      - LANL_aerisultra321
+      - LANL_GPS
+      - LANL_Anem
+      - UOU_LGR       # present 2026-03-10 only; absent days = no file
+
+  WYO:
+    description: WYO Sprinter
+    logger: LANL_rpi
+    instruments:
+      - WYO_picarro
+      - WYO_aerisultra460
+      - WYO_sprinter
+      - WYO_PTR-TOF   # stub, no data yet
