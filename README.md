@@ -16,7 +16,7 @@ nbstripout --install                  # strip notebook outputs on git add (run o
 
 ## Data lineage
 
-Raw files live on CHPC and are **read-only**. Each pipeline stage writes to its own output directory. All paths are configured in `config/paths.yaml` and exposed as `Path` objects by `config/paths.py` — do not hardcode data paths in scripts. Instrument readers and the task registry live in `src/readers.py`. Column rename maps live in `config/column_maps.yaml`.
+Raw files live on CHPC and are **read-only**. Each pipeline stage writes to its own output directory. All pipeline paths are defined in `paths.py` (repo root) — do not hardcode data paths in scripts. Instrument readers, column rename maps, and the task registry live in `src/readers.py`. Analysis-facing metadata lives in `config/instruments.yaml` and `config/deployments.yaml`.
 
 ```
 raw/  (read-only)
