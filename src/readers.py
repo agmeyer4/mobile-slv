@@ -22,40 +22,92 @@ Rename dicts (partial — standardise cross-instrument science columns, keep all
   PICO017_RENAME,  PICO017_ENG_RENAME
   ULTRA460_RENAME, ULTRA460_ENG_RENAME
   PICARRO_RENAME, LGR_RENAME, SPRINTER_RENAME
-  Source of truth: config/column_maps.yaml
 
 Instrument task registry:
   INSTRUMENT_TASKS  — {instrument_name: [task_spec, ...]}
-    Keys match config/instruments.yaml and config/paths.yaml stage_02_sources.
+    Keys match config/instruments.yaml and paths.STAGE_02_SOURCES.
     task_spec keys: glob, out_subdir, ts_status, and either:
       reader             — direct callable(path) -> DataFrame | None
       spectra_raw_subdir — pipeline calls make_spectra_reader(src_dir / this)
 """
 
 import re
-import yaml
 import pandas as pd
 from pathlib import Path
 
 AERIS_TS_FORMAT = "%m/%d/%Y %H:%M:%S.%f"
 _N_SPECTRA_DIAGNOSTIC = 2
 
-# ── Column rename maps (loaded from config/column_maps.yaml) ──────────────────
+# ── Column rename maps ────────────────────────────────────────────────────────
 
-_CONFIG_DIR = Path(__file__).parent.parent / "config"
+ULTRA321_RENAME = {
+    "P (mbars)":  "P_mbar",
+    "Tgas(degC)": "Tgas_C",
+    "CH4 (ppm)":  "CH4_ppm",
+    "H2O (ppm)":  "H2O_ppm",
+    "C2H6 (ppm)": "C2H6_ppm",
+    "C3H8 (ppm)": "C3H8_ppm",
+}
+ULTRA321_ENG_RENAME = {
+    **ULTRA321_RENAME,
+    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
+    "C2H6 (ppm)-Wet": "C2H6_ppm_wet",
+    "C3H8 (ppm)-Wet": "C3H8_ppm_wet",
+}
 
-with open(_CONFIG_DIR / "column_maps.yaml") as _f:
-    _COLUMN_MAPS = yaml.safe_load(_f)
+PICO017_RENAME = {
+    "P (mbars)":  "P_mbar",
+    "Tgas(degC)": "Tgas_C",
+    "CH4 (ppm)":  "CH4_ppm",
+    "H2O (ppm)":  "H2O_ppm",
+    "C2H6 (ppb)": "C2H6_ppb",
+    "R":          "R",
+    "C2/C1":      "C2C1",
+}
+PICO017_ENG_RENAME = {
+    **PICO017_RENAME,
+    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
+    "C2H6 (ppb)-Wet": "C2H6_ppb_wet",
+}
 
-ULTRA321_RENAME     = _COLUMN_MAPS["LANL_aerisultra321"]["Raw"]
-ULTRA321_ENG_RENAME = _COLUMN_MAPS["LANL_aerisultra321"]["Eng"]
-PICO017_RENAME      = _COLUMN_MAPS["LANL_aerispico017"]["Raw"]
-PICO017_ENG_RENAME  = _COLUMN_MAPS["LANL_aerispico017"]["Eng"]
-ULTRA460_RENAME     = _COLUMN_MAPS["WYO_aerisultra460"]["Raw"]
-ULTRA460_ENG_RENAME = _COLUMN_MAPS["WYO_aerisultra460"]["Eng"]
-PICARRO_RENAME      = _COLUMN_MAPS["WYO_picarro"]["Raw"]
-LGR_RENAME          = _COLUMN_MAPS["UOU_LGR"]["Raw"]
-SPRINTER_RENAME     = _COLUMN_MAPS["WYO_sprinter"]["Raw"]
+ULTRA460_RENAME = {
+    "P (mbars)":  "P_mbar",
+    "Tgas(degC)": "Tgas_C",
+    "CH4 (ppm)":  "CH4_ppm",
+    "H2O (ppm)":  "H2O_ppm",
+    "C2H6 (ppb)": "C2H6_ppb",
+    "R":          "R",
+    "C2/C1":      "C2C1",
+}
+ULTRA460_ENG_RENAME = {**ULTRA460_RENAME}
+
+PICARRO_RENAME = {
+    "CO_sync":      "CO_ppm",
+    "CO2_dry_sync": "CO2_ppm",
+    "CH4_dry_sync": "CH4_ppm",
+    "H2O_sync":     "H2O_ppm",
+}
+
+LGR_RENAME = {
+    "CH4d_ppm_raw": "CH4_ppm",
+    "H2O_ppm":      "H2O_ppm",
+    "CO2d_ppm_raw": "CO2_ppm",
+}
+
+SPRINTER_RENAME = {
+    "Latitude (DD.ddd +N)":      "lat_deg",
+    "Longitude (DDD.ddd -W)":    "lon_deg",
+    "Altitude (m)":              "altitude_m",
+    "Air Temperature (C)":       "temp_C",
+    "RH(%)":                     "RH_pct",
+    "Dew Point (C)":             "dew_pt_C",
+    "Wind Direction (Deg True)": "wind_dir_true",
+    "Wind Speed (m/s)":          "wind_spd_ms",
+    "Pressure (bar)":            "pressure_bar",
+    "Heading(deg)":              "heading_deg",
+    "GPSCorWindDirTrue (deg)":   "gps_wind_dir_true",
+    "GPSCorWindSpeed (m/s)":     "gps_wind_spd_ms",
+}
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

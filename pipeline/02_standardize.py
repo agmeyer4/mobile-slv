@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.paths import STAGE_02_SOURCES, STAGE_02_DIR, REPO_ROOT
+from paths import STAGE_02_SOURCES, STAGE_02_DIR, REPO_ROOT
 from src.readers import INSTRUMENT_TASKS, make_spectra_reader
 
 # ── Task list (built from registry) ───────────────────────────────────────────
