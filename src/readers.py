@@ -198,7 +198,7 @@ def _nmea_lon(val, hemi):
 _ANEM_RE = re.compile(
     r"S\s+([\d.]+)\s+D\s+(\d+)\s+U\s+([-\d.]+)\s+V\s+([-\d.]+)\s+W\s+([-\d.]+)\s+"
     r"T\s+([-\d.]+)\s+H\s+([\d.]+)\s+DP\s+([-\d.]+)\s+P\s+([\d.]+)\s+"
-    r"AD\s+([\d.]+)\s+PI\s+([-\d.]+)\s+RO\s+([-\d.]+)\s+MD\s+(\d+)\s+TD\s+(\d+)"
+    r"AD\s+([\d.]+)\s+PI\s+([-\d.]+)\s+RO\s+([-\d.]+)\s+MD\s+(\d+)"
 )
 
 
@@ -345,7 +345,7 @@ def read_anem(path) -> pd.DataFrame | None:
         m = _ANEM_RE.search(encoded)
         if m is None:
             continue
-        spd, dir_, u, v, w, temp, hum, dp, pres, ad, pitch, roll, md, td = m.groups()
+        spd, dir_, u, v, w, temp, hum, dp, pres, ad, pitch, roll, md = m.groups()
         rows.append({
             "epoch":         epoch,
             "wind_spd_ms":   float(spd),
@@ -361,7 +361,6 @@ def read_anem(path) -> pd.DataFrame | None:
             "pitch_deg":     float(pitch),
             "roll_deg":      float(roll),
             "mag_dir_deg":   float(md),
-            "true_dir_deg":  float(td),
         })
     if not rows:
         return None
