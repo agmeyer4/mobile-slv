@@ -18,8 +18,8 @@ Readers:
   make_spectra_reader(raw_dir)        — factory: returns spectra reader with raw_dir baked in
 
 Rename dicts (partial — standardise cross-instrument science columns, keep all others):
-  ULTRA321_RENAME, ULTRA321_ENG_RENAME
-  PICO017_RENAME,  PICO017_ENG_RENAME
+  ULTRA321_RENAME, ULTRA321_ENG_RENAME  (Eng same as Raw — wet variants left with raw names)
+  PICO017_RENAME,  PICO017_ENG_RENAME   (Eng same as Raw — wet variants left with raw names)
   ULTRA460_RENAME, ULTRA460_ENG_RENAME
   PICARRO_RENAME, LGR_RENAME, SPRINTER_RENAME
 
@@ -48,12 +48,7 @@ ULTRA321_RENAME = {
     "C2H6 (ppm)": "C2H6_ppm",
     "C3H8 (ppm)": "C3H8_ppm",
 }
-ULTRA321_ENG_RENAME = {
-    **ULTRA321_RENAME,
-    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
-    "C2H6 (ppm)-Wet": "C2H6_ppm_wet",
-    "C3H8 (ppm)-Wet": "C3H8_ppm_wet",
-}
+ULTRA321_ENG_RENAME = {**ULTRA321_RENAME}
 
 PICO017_RENAME = {
     "P (mbars)":  "P_mbar",
@@ -64,11 +59,7 @@ PICO017_RENAME = {
     "R":          "R",
     "C2/C1":      "C2C1",
 }
-PICO017_ENG_RENAME = {
-    **PICO017_RENAME,
-    "CH4 (ppm)-Wet":  "CH4_ppm_wet",
-    "C2H6 (ppb)-Wet": "C2H6_ppb_wet",
-}
+PICO017_ENG_RENAME = {**PICO017_RENAME}
 
 ULTRA460_RENAME = {
     "P (mbars)":  "P_mbar",

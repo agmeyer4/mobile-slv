@@ -34,7 +34,7 @@ WYO_aerisultra460:
   type: gas_analyzer
   manufacturer: Aeris
   model: Ultra
-  gases: [CH4_ppm, C2H6_ppm, C3H8_ppm]
+  gases: [CH4_ppm, C2H6_ppb]
   native_hz: 1
 
 WYO_sprinter:
