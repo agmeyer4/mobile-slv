@@ -38,6 +38,8 @@ raw/  (read-only)
 | Aeris Ultra 321 | `raw/LANL_aerisultra321/` | **01_utc_corrected/** (clock fixed) |
 | Aeris Pico 017 | `raw/LANL_aerispico017/` | **01_utc_corrected/** (clock fixed) |
 | UOU LGR | `raw/UOU_LGR/final/` | raw/ (trusted) |
+| LANL GPS | `raw/LANL_toughbook/GPS/` | raw/ (toughbook epoch; lag inherited from LANL_Anem) |
+| LANL Anem | `raw/LANL_toughbook/Anem/` | raw/ (toughbook epoch; H2O spike aligned in Stage 03) |
 | WYO PTR-TOF | `raw/WYO_PTR-TOF/` | — (no data yet) |
 
 ---
@@ -46,8 +48,8 @@ raw/  (read-only)
 
 | Stage | Script | Output | Status |
 |---|---|---|---|
-| 01 — UTC clock correction | `pipeline/01_utc_correction.ipynb` | `01_utc_corrected/` | ✅ Complete |
-| 02 — Standardize | `pipeline/02_standardize.py` | `02_standardized/` | ✅ Complete |
+| 01 — UTC clock correction | `pipeline/01_utc_correction.ipynb` | `01_utc_corrected/` | ⚠️ Needs re-run |
+| 02 — Standardize | `pipeline/02_standardize.py` | `02_standardized/` | ⚠️ Needs re-run |
 | 03 — Instrument alignment | `pipeline/03_instrument_alignment.ipynb` | `03_instrument_aligned/` | ⚠️ Needs interactive run |
 | 04 — Daily merge | `pipeline/04_daily_merge.py` | `04_daily/` | 🔲 Not yet built |
 
@@ -56,7 +58,7 @@ To run Stage 02:
 python pipeline/02_standardize.py
 ```
 
-To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab with the `mobile-slv` kernel. Run cells top-to-bottom; step through the widget review sections (A→D), then run the Save and Apply cells. `lag_offsets.json` is written after every commit — no work is lost if the kernel dies mid-review.
+To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab with the `mobile-slv` kernel. Run cells top-to-bottom; step through the widget review sections (A→E), then run the Save and Apply cells. `lag_offsets.json` is written after every commit — no work is lost if the kernel dies mid-review.
 
 ### Stage 02 output structure
 
@@ -72,6 +74,8 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 ├── WYO_picarro/         ← flat (no subdirectory)
 ├── UOU_LGR/             ← flat
 ├── WYO_sprinter/        ← flat
+├── LANL_GPS/            ← flat
+├── LANL_Anem/           ← flat
 └── run_manifest.json    ← git hash + per-instrument counts from last run
 ```
 
@@ -83,9 +87,23 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 │   ├── *.parquet            ← lag-shifted aligned files
 │   ├── bad/*.parquet        ← files marked bad in widget (startup sessions, noisy); no lag applied
 │   └── bad_timestamp/       ← Stage 02 no_coverage pass-through; Mountain Time clock (unreliable)
+├── WYO_picarro/             ← trusted pass-through (lag = 0)
+├── WYO_sprinter/            ← trusted pass-through (lag = 0)
+├── LANL_GPS/                ← lag inherited from LANL_Anem by date match
 ├── lag_offsets.json         ← confirmed lags + rejected list; written during widget review
 └── apply_manifest.json      ← apply stats written by Apply + pass-through cells
 ```
+
+### Stage 03 sections
+
+| Section | Instrument | Reference | Method |
+|---|---|---|---|
+| A | WYO_aerisultra460 | Picarro CH4 | auto cross-correlation |
+| B | LANL_aerisultra321 (WYO dates) | Picarro CH4 | auto cross-correlation |
+| C | LANL_aerispico017 (WYO dates) | Picarro CH4 | auto cross-correlation |
+| D | LANL_aerispico017 (MML dates) + UOU_LGR | Ultra321 CH4 | auto cross-correlation |
+| E | LANL_Anem | Ultra321 H2O_ppm | manual spike alignment (u/v/w vs H2O, z-scored) |
+| — | LANL_GPS | — | inherits LANL_Anem lag by date match |
 
 ---
 
@@ -95,14 +113,7 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 |---|---|---|
 | `aeris_clock.py` | Stage 01 | Clock offset computation and application for Aeris instruments |
 | `readers.py` | Stage 02 | Per-instrument file readers, rename maps, `INSTRUMENT_TASKS` registry |
-
-Stage 03 helpers (`_git_info`, `save_lag_offsets`, `cross_correlate`, `is_mml`, etc.) live directly in the notebook — no separate src/ module.
-
----
-
-## offsets/
-
-Legacy JSON files from the previous pipeline iteration. **Not consumed by the current pipeline.** Kept for reference; Stage 03 (when built) will write its own offsets to `03_instrument_aligned/`.
+| `align.py` | Stage 03 | Pure alignment utilities: `resample_series`, `cross_correlate`, `apply_lag_to_parquet`, `raw_stem` |
 
 ---
 
