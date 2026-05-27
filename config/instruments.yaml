@@ -2,6 +2,7 @@ LANL_aerispico017:
   type: gas_analyzer
   manufacturer: Aeris
   model: Pico
+  file_prefix: Pico100017
   gases: [CH4_ppm, C2H6_ppb]
   native_hz: 1
 
@@ -9,6 +10,7 @@ LANL_aerisultra321:
   type: gas_analyzer
   manufacturer: Aeris
   model: Ultra
+  file_prefix: Ultra100321
   gases: [CH4_ppm, C2H6_ppm, C3H8_ppm]
   native_hz: 1
 
@@ -34,6 +36,7 @@ WYO_aerisultra460:
   type: gas_analyzer
   manufacturer: Aeris
   model: Ultra
+  file_prefix: Ultra100460
   gases: [CH4_ppm, C2H6_ppb]
   native_hz: 1
 

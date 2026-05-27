@@ -20,6 +20,9 @@ apply_lag_to_parquet(src_path, lag_s, dst_path, ts_status=None)
 raw_stem(path)
     Strip Aeris file-type suffixes (Eng, spectra, spectralite) from a stem so that
     Raw, Eng, and Spectra files from the same session all share one lag-lookup key.
+
+date_tag(path)
+    Extract the YYMMDD date tag from an Aeris filename stem (second underscore field).
 """
 
 import numpy as np
@@ -80,6 +83,18 @@ def apply_lag_to_parquet(
         df['ts_status'] = ts_status
     df.to_parquet(dst_path)
     return len(df)
+
+
+def date_tag(path) -> str:
+    """Extract the YYMMDD date tag from an Aeris filename (second underscore field).
+
+    Examples
+    --------
+    'Ultra100321_260203_210000'    -> '260203'
+    'Pico100017_260119_100000Eng'  -> '260119'
+    """
+    parts = Path(path).stem.split('_')
+    return parts[1] if len(parts) >= 2 else ''
 
 
 def raw_stem(path) -> str:

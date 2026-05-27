@@ -29,10 +29,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from paths import STAGE_02_SOURCES, STAGE_02_DIR, REPO_ROOT
+from config import PLATFORM_BY_INST_DATE
 from src.readers import INSTRUMENT_TASKS, make_spectra_reader
+from src.align import raw_stem
 
 # ── Task list (built from registry) ───────────────────────────────────────────
 
@@ -130,6 +134,56 @@ for stub in STUBS:
     print(f"\n[STUB]  {stub} — not yet implemented, skipping")
     manifest_stats[stub] = {"skipped": True}
 
+# ── Write routing manifest ────────────────────────────────────────────────────
+# For instruments that appear on both platforms (Ultra321, Pico017), read the
+# first UTC timestamp from each corrected Raw Parquet and look up the platform
+# from PLATFORM_BY_INST_DATE.  Keyed by raw_stem so Raw/Eng/Spectra from the
+# same session all share one routing entry.
+# Using the actual UTC timestamp (not the filename date tag) avoids errors from
+# the Mountain Time clock being ~7 hours behind UTC.
+
+ROUTING_INSTRUMENTS = ['LANL_aerisultra321', 'LANL_aerispico017']
+
+routing: dict = {}
+print(f"\n{'═' * 60}")
+print("  Building routing manifest")
+print(f"{'═' * 60}")
+
+for inst in ROUTING_INSTRUMENTS:
+    raw_dir = STAGE_02_DIR / inst / 'Raw'
+    if not raw_dir.exists():
+        print(f"  [WARN]  {inst}/Raw not found — skipping")
+        continue
+    for f in sorted(raw_dir.glob('*.parquet')):
+        try:
+            idx = pd.read_parquet(f, columns=[]).index
+            if idx.empty:
+                print(f"  [WARN]  {f.name} is empty — skipping")
+                continue
+            ts = idx[0]
+            platform = None
+            for delta in [0, -1]:   # try UTC date, then UTC-1 (midnight rollover)
+                candidate = (ts + pd.Timedelta(days=delta)).strftime('%y%m%d')
+                platform = PLATFORM_BY_INST_DATE.get((inst, candidate))
+                if platform:
+                    break
+            if platform:
+                key = raw_stem(f)
+                routing[key] = platform
+                print(f"  {key:<55}  {platform}")
+            else:
+                print(f"  [WARN]  {f.name}: no schedule entry near {ts.date()} — unrouted")
+        except Exception as e:
+            print(f"  [WARN]  {f.name}: {e}")
+
+routing_path = STAGE_02_DIR / "routing_manifest.json"
+with open(routing_path, "w") as fh:
+    json.dump(routing, fh, indent=2, sort_keys=True)
+
+mml_n = sum(1 for v in routing.values() if v == 'MML')
+wyo_n = sum(1 for v in routing.values() if v == 'WYO')
+print(f"\n  Routing manifest: {len(routing)} entries  (MML={mml_n}, WYO={wyo_n})")
+
 # ── Write run manifest ────────────────────────────────────────────────────────
 
 git_hash, git_dirty = _git_info()
@@ -145,6 +199,7 @@ with open(manifest_path, "w") as fh:
     json.dump(manifest, fh, indent=2)
 
 print(f"\n{'═' * 60}")
-print(f"  Stage 02 complete  →  {STAGE_02_DIR}")
-print(f"  Manifest           →  {manifest_path}")
+print(f"  Stage 02 complete      →  {STAGE_02_DIR}")
+print(f"  Run manifest           →  {manifest_path}")
+print(f"  Routing manifest       →  {routing_path}")
 print(f"{'═' * 60}")

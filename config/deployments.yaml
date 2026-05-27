@@ -1,7 +1,59 @@
-# Campaign deployment schedule.
-# Each entry is one platform–date pair.  An absent instrument means no file expected.
+# Salt Lake Valley Winter Mobile Campaign 2026 (Jan 15 – Mar 10).
+#
+# schedule: is the authoritative record of what was deployed on each date.
+# platforms: lists every instrument that appeared on each vehicle across the campaign.
+# loggers: describes the data loggers and their clock-correction relationships.
+
+# ── Platforms ─────────────────────────────────────────────────────────────────
+# instruments: lists every instrument that appeared on that platform at least once
+# across the campaign (union over schedule: entries).  See schedule: for per-date actuals.
+# Note: LANL_aerisultra321 and LANL_aerispico017 appear on both platforms —
+#       they rode the WYO Sprinter during Feb 03–12, and the MML otherwise.
+platforms:
+  WYO:
+    description: University of Wyoming Sprinter van
+    logger: LANL_rpi
+    instruments:
+      - WYO_picarro
+      - WYO_aerisultra460
+      - WYO_sprinter
+      - LANL_aerisultra321  # also on MML; see note above
+      - LANL_aerispico017   # also on MML; see note above
+      - WYO_PTR-TOF         # stub — no data yet
+
+  MML:
+    description: Meyer Mobile Lab -- Utah Tacoma, Meyer Rav4
+    logger: LANL_toughbook
+    instruments:
+      - LANL_aerisultra321  # also on WYO; see note above
+      - LANL_aerispico017   # also on WYO; see note above
+      - LANL_GPS
+      - LANL_Anem
+      - UOU_LGR             # 2026-03-10 only
+
+# ── Loggers ───────────────────────────────────────────────────────────────────
+loggers:
+  LANL_rpi:
+    description: Raspberry Pi on WYO; Clock manually synced but correct within ~5 seconds
+    platform: WYO
+    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
+    notes: >
+      RPi logger files exist for Jan 19–22 but those dates are warm ups, not real depoloyments
+
+  LANL_toughbook:
+    description: Toughbook on MML ; Manually synced clock but correct within a few seconds
+    platform: MML
+    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
+    records: [LANL_GPS, LANL_Anem]  # GPS and Anem data streams share the toughbook epoch
+
+# ── Schedule ──────────────────────────────────────────────────────────────────
+# Each entry is one platform–date pair listing instruments actually present that day.
+# Absent instrument = no data file expected.
+# Ultra321 and Pico017 are LANL-owned but appear on WYO entries (Feb 03–12) —
+# the pipeline routes them by date tag in the filename, not by platform entry.
 schedule:
-  # ── Uinta Basin survey (MML only) ────────────────────────────────────────────
+  # ── Uinta Basin survey, Jan 19–22 (MML only) ─────────────────────────────
+  # MML van, Toughbook logger. No WYO Picarro co-deployment on these dates.
   - date: 2026-01-19
     platform: MML
     instruments: [LANL_aerisultra321, LANL_aerispico017, LANL_GPS, LANL_Anem]
@@ -18,16 +70,16 @@ schedule:
     platform: MML
     instruments: [LANL_aerisultra321, LANL_aerispico017, LANL_GPS, LANL_Anem]
 
-  # ── WYO-only day ─────────────────────────────────────────────────────────────
-  - date: 2026-02-03
-    platform: WYO
-    instruments: [WYO_picarro, WYO_aerisultra460, LANL_aerisultra321, WYO_sprinter]
-
-  # ── Joint WYO + MML deployment ───────────────────────────────────────────────
+  # ── First WYO deployments + joint WYO/MML, Feb 02–04 ─────────────────────
   - date: 2026-02-02
     platform: MML
     instruments: [LANL_aerisultra321]
     notes: Ultra321 only; Pico017/GPS/Anem not deployed
+
+  - date: 2026-02-03
+    platform: WYO
+    instruments: [WYO_picarro, WYO_aerisultra460, LANL_aerisultra321, WYO_sprinter]
+    notes: WYO-only day; Pico017 not deployed
 
   - date: 2026-02-04
     platform: WYO
@@ -37,7 +89,8 @@ schedule:
     platform: MML
     instruments: [LANL_aerisultra321, LANL_aerispico017, LANL_GPS, LANL_Anem]
 
-  # ── Extended WYO survey (Feb 05–12, no Feb 07) ───────────────────────────────
+  # ── Extended WYO survey, Feb 05–12 (no Feb 07) ───────────────────────────
+  # Ultra321 and Pico017 rode the WYO Sprinter; clock-corrected via RPi.
   - date: 2026-02-05
     platform: WYO
     instruments: [WYO_picarro, WYO_aerisultra460, LANL_aerisultra321, LANL_aerispico017, WYO_sprinter]
@@ -66,7 +119,7 @@ schedule:
     platform: WYO
     instruments: [WYO_picarro, WYO_aerisultra460, LANL_aerisultra321, LANL_aerispico017, WYO_sprinter]
 
-  # ── Spring MML deployments ───────────────────────────────────────────────────
+  # ── Spring MML deployments, Mar 08–10 ────────────────────────────────────
   - date: 2026-03-08
     platform: MML
     instruments: [LANL_aerisultra321, LANL_aerispico017, LANL_GPS, LANL_Anem]
@@ -75,35 +128,3 @@ schedule:
     platform: MML
     instruments: [LANL_aerisultra321, LANL_aerispico017, LANL_GPS, LANL_Anem, UOU_LGR]
     notes: Callao Survey; LGR present this date only
-
-loggers:
-  LANL_rpi:
-    description: Raspberry Pi, WYO platform
-    platform: WYO
-    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
-
-  LANL_toughbook:
-    description: Toughbook, LANL MML platform
-    platform: LANL_MML
-    corrects_clocks_for: [LANL_aerisultra321, LANL_aerispico017]
-    records: [LANL_GPS, LANL_Anem]  # these streams share the toughbook clock
-
-platforms:
-  LANL_MML:
-    description: LANL Mobile Lab
-    logger: LANL_toughbook
-    instruments:
-      - LANL_aerispico017
-      - LANL_aerisultra321
-      - LANL_GPS
-      - LANL_Anem
-      - UOU_LGR       # present 2026-03-10 only; absent days = no file
-
-  WYO:
-    description: WYO Sprinter
-    logger: LANL_rpi
-    instruments:
-      - WYO_picarro
-      - WYO_aerisultra460
-      - WYO_sprinter
-      - WYO_PTR-TOF   # stub, no data yet
