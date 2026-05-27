@@ -38,8 +38,8 @@ raw/  (read-only)
 | Aeris Ultra 321 | `raw/LANL_aerisultra321/` | **01_utc_corrected/** (clock fixed) |
 | Aeris Pico 017 | `raw/LANL_aerispico017/` | **01_utc_corrected/** (clock fixed) |
 | UOU LGR | `raw/UOU_LGR/final/` | raw/ (trusted) |
-| LANL GPS | `raw/LANL_toughbook/GPS/` | raw/ (toughbook epoch; lag inherited from LANL_Anem) |
-| LANL Anem | `raw/LANL_toughbook/Anem/` | raw/ (toughbook epoch; H2O spike aligned in Stage 03) |
+| LANL GPS | `raw/LANL_toughbook/GPS/` | raw/ (toughbook epoch; GPS-corrected in Stage 03b) |
+| LANL Anem | `raw/LANL_toughbook/Anem/` | raw/ (toughbook epoch; GPS-corrected in Stage 03b) |
 | WYO PTR-TOF | `raw/WYO_PTR-TOF/` | — (no data yet) |
 
 ---
@@ -50,7 +50,8 @@ raw/  (read-only)
 |---|---|---|---|
 | 01 — UTC clock correction | `pipeline/01_utc_correction.ipynb` | `01_utc_corrected/` | ⚠️ Needs re-run |
 | 02 — Standardize | `pipeline/02_standardize.py` | `02_standardized/` | ⚠️ Needs re-run |
-| 03 — Instrument alignment | `pipeline/03_instrument_alignment.ipynb` | `03_instrument_aligned/` | ⚠️ Needs interactive run |
+| 03a — WYO alignment | `pipeline/03a_align_wyo.ipynb` | `03_instrument_aligned/` | ⚠️ Needs interactive run |
+| 03b — MML alignment | `pipeline/03b_align_mml.ipynb` | `03_instrument_aligned/` | ⚠️ Needs interactive run |
 | 04 — Daily merge | `pipeline/04_daily_merge.py` | `04_daily/` | 🔲 Not yet built |
 
 To run Stage 02:
@@ -58,7 +59,13 @@ To run Stage 02:
 python pipeline/02_standardize.py
 ```
 
-To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab with the `mobile-slv` kernel. Run cells top-to-bottom; step through the widget review sections (A→E), then run the Save and Apply cells. `lag_offsets.json` is written after every commit — no work is lost if the kernel dies mid-review.
+**Stage 03a (WYO):** Open `pipeline/03a_align_wyo.ipynb` in JupyterLab with the `mobile-slv` kernel.
+Run cells top-to-bottom; step through widget sections A→C, then Save → Apply → Pass-throughs.
+`lag_offsets_wyo.json` is auto-saved after every commit.
+
+**Stage 03b (MML):** Open `pipeline/03b_align_mml.ipynb`. Step through spike-alignment sections E1→E3,
+run Section F (GPS correction — no widget, auto-computed), then Save → Apply → no_coverage pass-through.
+`lag_offsets_mml.json` is auto-saved after every commit.
 
 ### Stage 02 output structure
 
@@ -90,20 +97,33 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 ├── WYO_picarro/             ← trusted pass-through (lag = 0)
 ├── WYO_sprinter/            ← trusted pass-through (lag = 0)
 ├── LANL_GPS/                ← lag inherited from LANL_Anem by date match
-├── lag_offsets.json         ← confirmed lags + rejected list; written during widget review
-└── apply_manifest.json      ← apply stats written by Apply + pass-through cells
+├── lag_offsets_wyo.json     ← WYO confirmed lags + rejected list (03a)
+├── lag_offsets_mml.json     ← MML tube lags + GPS corrections (03b)
+├── apply_manifest_wyo.json  ← apply stats from 03a
+└── apply_manifest_mml.json  ← apply stats from 03b
 ```
 
-### Stage 03 sections
+### Stage 03a sections (WYO platform)
 
 | Section | Instrument | Reference | Method |
 |---|---|---|---|
 | A | WYO_aerisultra460 | Picarro CH4 | auto cross-correlation |
 | B | LANL_aerisultra321 (WYO dates) | Picarro CH4 | auto cross-correlation |
 | C | LANL_aerispico017 (WYO dates) | Picarro CH4 | auto cross-correlation |
-| D | LANL_aerispico017 (MML dates) + UOU_LGR | Ultra321 CH4 | auto cross-correlation |
-| E | LANL_Anem | Ultra321 H2O_ppm | manual spike alignment (u/v/w vs H2O, z-scored) |
-| — | LANL_GPS | — | inherits LANL_Anem lag by date match |
+| — | WYO_picarro, WYO_sprinter | — | trusted pass-through |
+
+### Stage 03b sections (MML platform)
+
+| Section | Instrument | Reference | Method |
+|---|---|---|---|
+| E1 | LANL_aerisultra321 (MML dates) | Anem u/v/w | manual H2O spike (normalize=True) |
+| E2 | LANL_aerispico017 (MML dates) | Anem u/v/w | manual H2O spike (normalize=True) |
+| E3 | UOU_LGR (Mar 10) | Anem u/v/w | manual H2O spike (normalize=True) |
+| F | LANL_GPS | GPS satellite UTC | auto: median(toughbook\_epoch − GPS\_UTC) per date |
+| — | LANL_Anem, LANL_GPS | — | GPS correction only (−gps\_corr) |
+
+**Total lag for MML gas:** `tube_lag − gps_corr`  
+**Total lag for Anem / GPS:** `−gps_corr`
 
 ---
 
@@ -113,7 +133,7 @@ To run Stage 03: open `pipeline/03_instrument_alignment.ipynb` in JupyterLab wit
 |---|---|---|
 | `aeris_clock.py` | Stage 01 | Clock offset computation and application for Aeris instruments |
 | `readers.py` | Stage 02 | Per-instrument file readers, rename maps, `INSTRUMENT_TASKS` registry |
-| `align.py` | Stage 03 | Pure alignment utilities: `resample_series`, `cross_correlate`, `apply_lag_to_parquet`, `raw_stem` |
+| `align.py` | Stages 03a, 03b | Pure alignment utilities: `resample_series`, `cross_correlate`, `apply_lag_to_parquet` (with `ts_status`), `raw_stem` |
 
 ---
 

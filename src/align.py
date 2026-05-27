@@ -2,7 +2,7 @@
 Stage 03 alignment utilities.
 
 Pure functions with no notebook or session-state dependencies.
-Imported by pipeline/03_instrument_alignment.ipynb; reusable by Stage 04.
+Imported by pipeline/03a_align_wyo.ipynb and 03b_align_mml.ipynb; reusable by Stage 04.
 
 Public API
 ----------
@@ -13,9 +13,9 @@ cross_correlate(ref, sig, max_lag_s=600, freq_s=1)
     Return the lag in seconds that best aligns sig to ref via full cross-correlation.
     Positive lag = sig timestamps are behind UTC by that many seconds.
 
-apply_lag_to_parquet(src_path, lag_s, dst_path)
+apply_lag_to_parquet(src_path, lag_s, dst_path, ts_status=None)
     Read a Parquet file, shift its DatetimeIndex by lag_s seconds, write to dst_path.
-    Returns the number of rows written.
+    Optionally overwrites the ts_status column. Returns the number of rows written.
 
 raw_stem(path)
     Strip Aeris file-type suffixes (Eng, spectra, spectralite) from a stem so that
@@ -60,16 +60,24 @@ def cross_correlate(
     return float(lags[mask][np.argmax(corr[mask])] * freq_s)
 
 
-def apply_lag_to_parquet(src_path, lag_s: float, dst_path) -> int:
+def apply_lag_to_parquet(
+    src_path,
+    lag_s: float,
+    dst_path,
+    ts_status: str | None = None,
+) -> int:
     """
     Read src_path, shift DatetimeIndex by lag_s seconds, write to dst_path.
     Creates parent directories as needed. Returns row count.
+    If ts_status is given, overwrites the ts_status column before writing.
     """
     dst_path = Path(dst_path)
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     df = pd.read_parquet(src_path)
     if lag_s != 0.0:
         df.index = df.index + pd.Timedelta(seconds=lag_s)
+    if ts_status is not None:
+        df['ts_status'] = ts_status
     df.to_parquet(dst_path)
     return len(df)
 

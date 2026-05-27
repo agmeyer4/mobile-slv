@@ -13,7 +13,8 @@ Readers:
   read_lgr(path)                      — LGR final .dat files
   read_sprinter(path)                 — Sprinter .csv files
   read_spectra(spectra_path, raw_dir) — headerless Aeris Spectra/Spectralite .txt files
-  read_gps(path)                      — toughbook GPS .dat files (NMEA-encoded)
+  read_gps(path)                      — toughbook GPS .dat files (NMEA-encoded);
+                                        index=toughbook epoch; epoch + gps_receiver_utc columns for clock correction
   read_anem(path)                     — toughbook Anemometer .dat files (Trisonica-encoded)
   make_spectra_reader(raw_dir)        — factory: returns spectra reader with raw_dir baked in
 
@@ -284,33 +285,78 @@ def read_sprinter(path) -> pd.DataFrame | None:
 
 def read_gps(path) -> pd.DataFrame | None:
     """
-    Toughbook GPS .dat file. Parses GPRMC sentences (lat, lon, speed, course)
-    and GPGGA (altitude). Indexed on toughbook epoch timestamp (UTC).
+    Toughbook GPS .dat file. Parses NMEA sentences into navigation and quality columns.
+
+    Index:   TIMESTAMP — toughbook epoch as UTC DatetimeIndex (tz-aware).
+    Columns (in order):
+      epoch             — raw toughbook float epoch; subtract gps_receiver_utc to get clock correction
+      gps_receiver_utc  — GPS satellite UTC time from GPRMC (tz-aware Timestamp; true UTC)
+      lat_deg, lon_deg, altitude_m, geoid_sep_m
+      speed_ms, course_true_deg, mag_course_deg
+      fix_quality, n_sats, hdop          (from GPGGA; 10 Hz)
+      fix_type, pdop, vdop               (from GPGSA;  1 Hz — merged within 1.5 s)
     """
     gprmc_rows: list[dict] = []
     gpgga_rows: list[dict] = []
+    gpvtg_rows: list[dict] = []
+    gpgsa_rows: list[dict] = []
 
     for epoch, sentence in _toughbook_data_lines(path):
         fields = sentence.split(",")
         msg = fields[0].lstrip("$")
 
-        if msg == "GPRMC" and len(fields) >= 9 and fields[2] == "A":
+        if msg == "GPRMC" and len(fields) >= 10 and fields[2] == "A":
             try:
+                t_str, d_str = fields[1], fields[9]
+                hh, mm = int(t_str[:2]), int(t_str[2:4])
+                ss_f = float(t_str[4:])
+                ss_i = int(ss_f)
+                us = int((ss_f - ss_i) * 1_000_000)
+                dd, mo, yy = int(d_str[:2]), int(d_str[2:4]), int(d_str[4:6]) + 2000
+                gps_utc_s = pd.Timestamp(
+                    year=yy, month=mo, day=dd,
+                    hour=hh, minute=mm, second=ss_i, microsecond=us, tz="UTC",
+                ).timestamp()
                 gprmc_rows.append({
-                    "epoch":          epoch,
-                    "lat_deg":        _nmea_lat(fields[3], fields[4]),
-                    "lon_deg":        _nmea_lon(fields[5], fields[6]),
-                    "speed_ms":       round(float(fields[7]) * 0.51444, 4) if fields[7] else float("nan"),
-                    "course_true_deg": float(fields[8]) if fields[8] else float("nan"),
+                    "epoch":            epoch,
+                    "gps_utc_s":        gps_utc_s,
+                    "lat_deg":          _nmea_lat(fields[3], fields[4]),
+                    "lon_deg":          _nmea_lon(fields[5], fields[6]),
+                    "speed_ms":         round(float(fields[7]) * 0.51444, 4) if fields[7] else float("nan"),
+                    "course_true_deg":  float(fields[8]) if fields[8] else float("nan"),
                 })
             except (ValueError, IndexError):
                 continue
 
-        elif msg == "GPGGA" and len(fields) >= 10:
+        elif msg == "GPGGA" and len(fields) >= 12:
             try:
                 gpgga_rows.append({
-                    "epoch":      epoch,
-                    "altitude_m": float(fields[9]) if fields[9] else float("nan"),
+                    "epoch":       epoch,
+                    "fix_quality": float(fields[6]) if fields[6] else float("nan"),
+                    "n_sats":      float(fields[7]) if fields[7] else float("nan"),
+                    "hdop":        float(fields[8]) if fields[8] else float("nan"),
+                    "altitude_m":  float(fields[9]) if fields[9] else float("nan"),
+                    "geoid_sep_m": float(fields[11]) if fields[11] else float("nan"),
+                })
+            except (ValueError, IndexError):
+                continue
+
+        elif msg == "GPVTG" and len(fields) >= 4:
+            try:
+                gpvtg_rows.append({
+                    "epoch":          epoch,
+                    "mag_course_deg": float(fields[3]) if fields[3] else float("nan"),
+                })
+            except (ValueError, IndexError):
+                continue
+
+        elif msg == "GPGSA" and len(fields) >= 18:
+            try:
+                gpgsa_rows.append({
+                    "epoch":    epoch,
+                    "fix_type": float(fields[2]) if fields[2] else float("nan"),
+                    "pdop":     float(fields[15]) if fields[15] else float("nan"),
+                    "vdop":     float(fields[17].split("*")[0]) if fields[17] else float("nan"),
                 })
             except (ValueError, IndexError):
                 continue
@@ -318,17 +364,16 @@ def read_gps(path) -> pd.DataFrame | None:
     if not gprmc_rows:
         return None
 
-    df_rmc = pd.DataFrame(gprmc_rows).set_index("epoch")
-    if gpgga_rows:
-        df_gga = pd.DataFrame(gpgga_rows).set_index("epoch")
-        df = pd.merge_asof(
-            df_rmc.sort_index(), df_gga.sort_index(),
-            left_index=True, right_index=True, tolerance=0.5,
-        )
-    else:
-        df = df_rmc
+    df = pd.DataFrame(gprmc_rows).set_index("epoch").sort_index()
+    for extra_rows, tol in [(gpgga_rows, 0.5), (gpvtg_rows, 0.5), (gpgsa_rows, 1.5)]:
+        if extra_rows:
+            other = pd.DataFrame(extra_rows).set_index("epoch").sort_index()
+            df = pd.merge_asof(df, other, left_index=True, right_index=True, tolerance=tol)
 
-    df.index = _epoch_to_utc_index(df.index)
+    df.insert(0, "epoch", df.index.values)
+    df["gps_receiver_utc"] = pd.to_datetime(df["gps_utc_s"], unit="s", utc=True)
+    df = df.drop(columns=["gps_utc_s"])
+    df.index = _epoch_to_utc_index(df["epoch"])
     df.index.name = "TIMESTAMP"
     return df if not df.empty else None
 
