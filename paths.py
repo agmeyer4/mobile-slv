@@ -12,6 +12,9 @@ STAGE_02_DIR = DATA_ROOT / '02_standardized'
 STAGE_03_DIR = DATA_ROOT / '03_instrument_aligned'
 STAGE_04_DIR = DATA_ROOT / '04_daily'
 
+# ── Stage 03 quality manifest ─────────────────────────────────────────────────
+QUALITY_MANIFEST_PATH = STAGE_03_DIR / 'quality_manifest.yaml'
+
 # ── Stage 01 metadata ─────────────────────────────────────────────────────────
 STAGE_01_INSTRUMENTS = {'LANL_aerisultra321', 'LANL_aerispico017'}
 STAGE_01_LOGGERS     = {'LANL_rpi', 'LANL_toughbook'}

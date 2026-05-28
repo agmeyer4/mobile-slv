@@ -2,7 +2,8 @@
 Stage 03 alignment utilities.
 
 Pure functions with no notebook or session-state dependencies.
-Imported by pipeline/03a_align_wyo.ipynb and 03b_align_mml.ipynb; reusable by Stage 04.
+Imported by pipeline/03_survey.ipynb, 03a_align_wyo.ipynb, and 03b_align_mml.ipynb;
+reusable by Stage 04.
 
 Public API
 ----------
@@ -13,9 +14,9 @@ cross_correlate(ref, sig, max_lag_s=600, freq_s=1)
     Return the lag in seconds that best aligns sig to ref via full cross-correlation.
     Positive lag = sig timestamps are behind UTC by that many seconds.
 
-apply_lag_to_parquet(src_path, lag_s, dst_path, ts_status=None)
+apply_lag_to_parquet(src_path, lag_s, dst_path, ts_status=None, lag_ref=None)
     Read a Parquet file, shift its DatetimeIndex by lag_s seconds, write to dst_path.
-    Optionally overwrites the ts_status column. Returns the number of rows written.
+    Optionally overwrites the ts_status and lag_ref columns. Returns row count written.
 
 raw_stem(path)
     Strip Aeris file-type suffixes (Eng, spectra, spectralite) from a stem so that
@@ -23,6 +24,17 @@ raw_stem(path)
 
 date_tag(path)
     Extract the YYMMDD date tag from an Aeris filename stem (second underscore field).
+
+load_quality_manifest(path)
+    Load quality_manifest.yaml. Returns nested dict or empty dict if file absent.
+
+file_quality(manifest, instrument, path)
+    Return (status, reason, ref) for a file from the quality manifest.
+    Falls back to ('uncertain', '', '') if not in manifest.
+
+load_aligned_series(stage03_dir, instrument, subdir, col)
+    Load all good aligned Parquet files for an instrument into a single Series.
+    Returns None if no files found or the instrument dir doesn't exist yet.
 """
 
 import numpy as np
@@ -68,11 +80,16 @@ def apply_lag_to_parquet(
     lag_s: float,
     dst_path,
     ts_status: str | None = None,
+    lag_ref: str | None = None,
 ) -> int:
     """
     Read src_path, shift DatetimeIndex by lag_s seconds, write to dst_path.
     Creates parent directories as needed. Returns row count.
-    If ts_status is given, overwrites the ts_status column before writing.
+
+    ts_status : overwrites the ts_status column if provided.
+    lag_ref   : writes a lag_ref column recording which reference was used for
+                alignment (e.g. 'WYO_picarro', 'LANL_Anem'). Useful for the
+                analysis repo to know how well-grounded a file's timestamps are.
     """
     dst_path = Path(dst_path)
     dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +98,8 @@ def apply_lag_to_parquet(
         df.index = df.index + pd.Timedelta(seconds=lag_s)
     if ts_status is not None:
         df['ts_status'] = ts_status
+    if lag_ref is not None:
+        df['lag_ref'] = lag_ref
     df.to_parquet(dst_path)
     return len(df)
 
@@ -104,8 +123,8 @@ def raw_stem(path) -> str:
 
     Examples
     --------
-    'Ultra100321_260203_210000'      -> 'Ultra100321_260203_210000'
-    'Ultra100321_260203_210000Eng'   -> 'Ultra100321_260203_210000'
+    'Ultra100321_260203_210000'        -> 'Ultra100321_260203_210000'
+    'Ultra100321_260203_210000Eng'     -> 'Ultra100321_260203_210000'
     'Ultra100321_260203_210000spectra' -> 'Ultra100321_260203_210000'
     """
     s = Path(path).stem
@@ -113,3 +132,100 @@ def raw_stem(path) -> str:
         if s.endswith(suffix):
             return s[: -len(suffix)]
     return s
+
+
+# ── Quality manifest helpers ──────────────────────────────────────────────────
+
+def load_quality_manifest(path) -> dict:
+    """Load quality_manifest.yaml.
+
+    Returns nested dict {instrument: {date_tag: {status, reason, ref}}}.
+    Returns empty dict if the file does not exist.
+    """
+    import yaml
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with open(path) as fh:
+        data = yaml.safe_load(fh) or {}
+    return data
+
+
+def file_quality(manifest: dict, instrument: str, path) -> tuple:
+    """Return (status, reason) for a file from the quality manifest.
+
+    Looks up by instrument name and raw_stem (the session key shared by Raw, Eng,
+    and Spectra files from the same session).  Falls back to ('uncertain', '')
+    if the instrument or file is not in the manifest.
+
+    status : 'good' | 'uncertain' | 'bad'
+    reason : free-text note from the survey
+    """
+    stem      = raw_stem(path)
+    inst_data = manifest.get(instrument, {})
+    entry     = inst_data.get(stem, {})
+    return (
+        entry.get('status', 'uncertain'),
+        entry.get('reason', ''),
+    )
+
+
+def reference_bad_dates(quality_manifest: dict, ref_instrument: str, ref_dir) -> set:
+    """Return YYMMDD date tags where a reference instrument is marked bad in the manifest.
+
+    Used to cascade pre-rejection to dependent instruments: if the reference was
+    bad on a date, nothing that depends on it can be aligned for that date either.
+
+    Determines dates from the first timestamp in each bad-marked parquet file rather
+    than from the filename, so it works regardless of naming conventions.
+    """
+    bad_dates = set()
+    ref_dir   = Path(ref_dir)
+    for stem, entry in quality_manifest.get(ref_instrument, {}).items():
+        if entry.get('status') != 'bad':
+            continue
+        f = ref_dir / f'{stem}.parquet'
+        if not f.exists():
+            continue
+        try:
+            idx = pd.read_parquet(f, columns=[]).index
+            if len(idx) > 0:
+                bad_dates.add(idx[0].strftime('%y%m%d'))
+        except Exception:
+            pass
+    return bad_dates
+
+
+def load_aligned_series(
+    stage03_dir,
+    instrument: str,
+    subdir: str,
+    col: str,
+) -> 'pd.Series | None':
+    """Load all good aligned Parquet files for an instrument into one time-indexed Series.
+
+    Reads only files directly inside `{stage03_dir}/{instrument}/{subdir}/` — the bad/
+    and bad_timestamp/ subdirectories are excluded because they are at deeper nesting.
+
+    Returns None if the directory doesn't exist or no files are found.
+    """
+    inst_dir = Path(stage03_dir) / instrument
+    if subdir:
+        inst_dir = inst_dir / subdir
+    if not inst_dir.exists():
+        return None
+    files = sorted(inst_dir.glob('*.parquet'))   # only direct children, not bad/ or bad_timestamp/
+    if not files:
+        return None
+    parts = []
+    for f in files:
+        try:
+            s = pd.read_parquet(f, columns=[col])[col].dropna()
+            if len(s) > 0:
+                parts.append(s)
+        except Exception:
+            pass
+    if not parts:
+        return None
+    combined = pd.concat(parts).sort_index()
+    return combined[~combined.index.duplicated(keep='first')]
