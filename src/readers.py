@@ -208,6 +208,16 @@ def read_aeris_raw(path, rename: dict) -> pd.DataFrame:
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
     ts = pd.to_datetime(df["Time Stamp"].str.strip(), format=AERIS_TS_FORMAT, errors="coerce")
+    # Aeris appends a few startup rows from the next session to the still-open file
+    # before creating a new one. Drop them only when the tail is ≤ 10 rows — a larger
+    # tail suggests a real gap in the session that should be visible in the survey.
+    _diffs = ts.dropna().diff()
+    _big = _diffs[_diffs > pd.Timedelta("30min")]
+    if not _big.empty:
+        _cut = _big.index[0]
+        if len(df) - _cut <= 10:
+            df = df.loc[: _cut - 1]
+            ts = ts.loc[: _cut - 1]
     return _finalize(df, ts, rename)
 
 
