@@ -10,10 +10,13 @@ RAW_DIR = DATA_ROOT / 'raw'
 STAGE_01_DIR = DATA_ROOT / '01_utc_corrected'
 STAGE_02_DIR = DATA_ROOT / '02_standardized'
 STAGE_03_DIR = DATA_ROOT / '03_instrument_aligned'
-STAGE_04_DIR = DATA_ROOT / '04_daily'
+STAGE_04_DIR = DATA_ROOT / '04_calibrated'
 
 # ── Stage 03 quality manifest ─────────────────────────────────────────────────
 QUALITY_MANIFEST_PATH = STAGE_03_DIR / 'quality_manifest.yaml'
+
+# ── Stage 04 calibration reference ────────────────────────────────────────────
+TANK_DETAILS_PATH = RAW_DIR / 'calibration' / 'tank_details.txt'
 
 # ── Stage 01 metadata ─────────────────────────────────────────────────────────
 STAGE_01_INSTRUMENTS = {'LANL_aerisultra321', 'LANL_aerispico017'}
