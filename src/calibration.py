@@ -8,6 +8,33 @@ campaign-specific configuration (paths, instrument list, colors) and narration.
 
 Public API
 ----------
+Recommended entry points for a new campaign or a new species
+    Pick "tank" or "reference", pass your data, get coefficients back with the standard
+    diagnostic checks already run and plotted:
+
+        coefs = cal.calibrate_and_check_tank(series_dict, tank, windows, 'CH4_ppm',
+                                              colors, y_label='CH4 (ppm)')
+        coef  = cal.calibrate_and_check_reference(ref_values, target_values, anchor='ols')
+
+    calibrate_and_check_tank(series_dict, tank, windows, species_key, colors, y_label, title_prefix='')
+        Tank-anchored: window_stats + fit_species per instrument, then the 1:1 scatter
+        and the apply-back-to-own-windows sanity check. Returns {instrument: coef}.
+    calibrate_and_check_reference(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None, ...)
+        Reference-instrument: fit_reference_cal, then the matched-pairs scatter and
+        (optionally) an interference-diagnostic plot. One target per call — loop over
+        targets, since the pairing step upstream usually differs per target anyway.
+    fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None)
+        The fit alone, no plots — anchor='ols' for plain regression, anchor='pinned' to
+        pin the baseline to a known (z_ref, z_tgt) point and fit only the gain.
+
+    Need more control than these give (e.g. mobile-slv's own CH4 tank fit, which reuses
+    one shared multi-instrument stats_df for error bars AND a multi-date drift check)?
+    Drop to the lower-level functions below directly — same functions these wrap.
+
+    Known limitation: parse_tank_details recognizes CH4/C3H8/C2H6 by name in its
+    concentration-line regex; a campaign measuring different species needs to extend
+    that branch (a smaller, separate task from the fitting-method generalization above).
+
 Parsing
     parse_tank_details(filepath)
         Parse a tank/dilution calibration manifest into tank concentrations and
@@ -50,6 +77,9 @@ Zero+span (baseline anchor + peak-alignment span)
         Zero+span cross-calibration: anchor the baseline to a shared reference value
         (a tank reading, an ambient baseline, etc.), fit the gain on peaks. Returns
         apply-convention slope/intercept.
+    fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None)
+        Dispatches to linreg (anchor='ols') or fit_zero_span (anchor='pinned') — see
+        "Recommended entry points" above; this is the lower-level fit-only piece.
 
 Applying calibration
     apply_linear(series, coef)
@@ -468,6 +498,52 @@ def fit_zero_span(ref_peaks, target_peaks, z_ref, z_tgt):
     return {'slope': 1.0 / gain, 'intercept': z_tgt - z_ref / gain,
             'gain': gain, 'r2': r2, 'n': int(m.sum()),
             'z_ref': float(z_ref), 'z_tgt': float(z_tgt)}
+
+
+def fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None):
+    """Fit a target instrument against already-matched reference values.
+
+    The single entry point for "calibrate against a reference instrument" — the
+    counterpart to tank-anchored fitting (`fit_species`). The caller does the pairing
+    (`pair_series_nearest` for continuous ambient overlap, `find_peak_matches` for
+    plume-peak matching, or anything else) since that step is usually also needed for
+    diagnostics/plotting the caller wants to do anyway; this function only decides how
+    to fit the matched values.
+
+    Parameters
+    ----------
+    ref_values, target_values : array-like
+        Matched reference/target values, same length, same units.
+    anchor : {'ols', 'pinned'}
+        'ols'    — plain regression (`linreg`); the offset floats free. Good when there
+                   are many matched points spanning a wide range (e.g. continuous
+                   ambient overlap against a reference instrument).
+        'pinned' — force the fit through a known (z_ref, z_tgt) point (a tank zero via
+                   `tank_window_stats`, or the reference's own ambient baseline via
+                   `ambient_baseline_stats`), then fit the gain on `values`
+                   (`fit_zero_span` underneath). Good with few matched points (e.g.
+                   plume peaks) where the baseline needs to be pinned to something
+                   trustworthy rather than left to the regression's own intercept.
+    z_ref, z_tgt : float, required if anchor='pinned'
+        Reference and target readings at the shared anchor point.
+
+    Returns
+    -------
+    dict or None
+        Same `apply_linear`-compatible convention as `fit_species`/`fit_zero_span`:
+        {'slope', 'intercept', 'r2', 'n', ...}.
+    """
+    if anchor == 'ols':
+        sl, ic, r2, n = linreg(ref_values, target_values)
+        if n < 2 or not np.isfinite(sl):
+            return None
+        return {'slope': sl, 'intercept': ic, 'r2': r2, 'n': n}
+    elif anchor == 'pinned':
+        if z_ref is None or z_tgt is None:
+            raise ValueError("anchor='pinned' requires z_ref and z_tgt")
+        return fit_zero_span(ref_values, target_values, z_ref, z_tgt)
+    else:
+        raise ValueError(f"unknown anchor {anchor!r} (expected 'ols' or 'pinned')")
 
 
 # ── Applying calibration ─────────────────────────────────────────────────────────
@@ -892,3 +968,177 @@ def plot_residual_diagnostic(residual, diagnostic, label, color, corr_threshold=
     fig.update_layout(title=title, xaxis_title=label, yaxis_title='fit residual',
                        template='plotly_white', height=380)
     return fig, corr
+
+
+# ── Calibration workflows (recommended entry points: fit + standard checks) ──────
+#
+# These two functions are the recommended starting point for a new campaign or a new
+# species: pick "tank" or "reference", pass your data, get coefficients back with the
+# standard diagnostic plots already shown. Both are thin orchestrators over the
+# functions above — no new fitting math. Anything needing more control (shared
+# multi-instrument stats, custom check sequencing) can drop to the lower-level
+# functions directly, exactly as mobile-slv's own tank-CH4 fitting does.
+
+def calibrate_and_check_tank(series_dict, tank, windows, species_key, colors, y_label,
+                              title_prefix=''):
+    """Tank-anchored calibration, fit + standard checks, for one or more instruments.
+
+    1. `window_stats` + `fit_species` per instrument -> coefficients.
+    2. 1:1 scatter (points = window means, ±1σ in-window-noise error bars, per-
+       instrument fit line, dashed y=x) via `plot_calibration_scatter`.
+    3. Sanity check: apply each fit back to its own window means and replot
+       corrected-vs-truth (should collapse onto 1:1) via `plot_calibration_scatter`.
+
+    Shows both plots and returns the coefficients. For anything needing the shared
+    `stats_df` itself (e.g. re-fitting across several calibration dates for a drift
+    check, or reusing the per-window std elsewhere), call `window_stats` + `fit_species`
+    directly instead — same functions this wraps, just not hidden behind one call.
+
+    Parameters
+    ----------
+    series_dict : dict[str, pd.Series]
+        instrument -> full (or windowed) time series for this species.
+    tank : dict
+        Output of `parse_tank_details` (the `tank` return value).
+    windows : list[dict]
+        One calibration event's windows (e.g. `windows_by_date[date]`).
+    species_key : str
+        e.g. 'CH4_ppm' — must match a key in each tank entry.
+    colors : dict[str, str]
+        instrument -> hex color.
+    y_label : str
+        e.g. 'CH4 (ppm)'.
+    title_prefix : str
+        Prepended to both plot titles (e.g. 'Feb 12 ').
+
+    Returns
+    -------
+    dict[str, dict | None]
+        instrument -> coefficient dict (None if fewer than 2 usable tank points).
+    """
+    stats_df = window_stats(series_dict, windows)
+    coefs = {inst: fit_species(stats_df, tank, inst, species_key) for inst in series_dict}
+
+    xt = stats_df['tank_key'].map(lambda k: tank.get(k, {}).get(species_key)).astype(float)
+    xg, yg, eg = {}, {}, {}
+    for inst, c in coefs.items():
+        col = f'{inst}_mean'
+        if c is None or col not in stats_df.columns:
+            continue
+        xg[inst] = xt.values
+        yg[inst] = stats_df[col].astype(float).values
+        if f'{inst}_std' in stats_df.columns:
+            eg[inst] = stats_df[f'{inst}_std'].astype(float).values
+    fig_1to1 = plot_calibration_scatter(xg, yg, coefs, colors, x_title=f'Tank {y_label}',
+            y_title=f'Instrument {y_label}',
+            title=f'{title_prefix}1:1 view — points ±1σ in-window noise, per-instrument fit, 1:1 line',
+            yerr_by_group=eg)
+    fig_1to1.show()
+
+    xg2, yg2 = {}, {}
+    for inst, c in coefs.items():
+        col = f'{inst}_mean'
+        if c is None or col not in stats_df.columns:
+            continue
+        corrected = apply_linear(stats_df[col].astype(float), c)
+        xg2[inst], yg2[inst] = xt.values, corrected.values
+    fig_sanity = plot_calibration_scatter(xg2, yg2, {}, colors, x_title=f'Tank {y_label}',
+            y_title=f'CORRECTED {y_label}',
+            title=f'{title_prefix}sanity check — corrected readings vs tank (should lie on 1:1)')
+    fig_sanity.show()
+
+    return coefs
+
+
+def calibrate_and_check_reference(ref_values, target_values, anchor='ols', z_ref=None,
+                                   z_tgt=None, colors=None, x_label='', y_label='',
+                                   title_prefix='', target_label='target', color=None,
+                                   diagnostic_values=None, diagnostic_label=None,
+                                   plot_sample_size=None, plot_seed=0):
+    """Reference-instrument calibration, fit + standard checks, for one target.
+
+    Call once per target instrument (the caller loops over targets — the pairing step,
+    done beforehand via `pair_series_nearest` or `find_peak_matches`, usually differs
+    per target: e.g. two targets covering different calendar-date ranges than the
+    reference).
+
+    1. `fit_reference_cal(anchor=...)` -> coefficient — **always fit on the full
+       `ref_values`/`target_values`**, regardless of `plot_sample_size`.
+    2. Matched-pairs scatter (fit line + dashed 1:1) via `plot_calibration_scatter` —
+       subsampled for render weight if `plot_sample_size` is given (e.g. a continuous
+       ambient-overlap fit with hundreds of thousands of points needs a lighter plot;
+       the fit itself never sees the subsample).
+    3. If `diagnostic_values` given (e.g. a second gas's matched values, for spotting
+       cross-channel interference): `plot_residual_diagnostic`, same subsample — note the
+       reported correlation is then computed on that subsample, not the full population.
+
+    Shows the plot(s) and returns the coefficient. Deliberately does NOT include the
+    native-resolution before/after timeseries check — that operates on full series
+    plus a chosen time window, a different data shape than the matched-pairs arrays
+    here. Call `apply_linear(series, coef)` + `plot_timeseries_panels` /
+    `plot_raw_corrected_vs_reference` over your own window for that, same pattern
+    mobile-slv's own notebook already uses.
+
+    Parameters
+    ----------
+    ref_values, target_values : array-like
+        Matched reference/target values (see `fit_reference_cal`).
+    anchor : {'ols', 'pinned'}
+        See `fit_reference_cal`.
+    z_ref, z_tgt : float, required if anchor='pinned'
+    colors : dict[str, str] or None
+        Looked up by `target_label`; falls back to `color` or 'gray' if not found.
+    x_label, y_label : str
+        Axis titles (e.g. 'Ultra460 C2H6 peak (ppb)', 'Instrument C2H6 peak (ppb)').
+    title_prefix : str
+        Prepended to the scatter title.
+    target_label : str
+        Legend/color-lookup key for the target (e.g. the instrument name).
+    color : str or None
+        Direct color override if `colors` doesn't have `target_label`.
+    diagnostic_values : array-like or None
+        A second variable matched to the same pairs (e.g. another gas's concentration
+        at each matched point) to check for cross-channel interference.
+    diagnostic_label : str or None
+        Required if `diagnostic_values` is given — used in the diagnostic plot's title.
+    plot_sample_size : int or None
+        If given and there are more than this many matched points, randomly subsample
+        (fixed seed) to this many points for the plot(s) only — the fit always uses the
+        full arrays. Use for huge continuous-overlap fits (hundreds of thousands of
+        points) where plotting everything would be prohibitively heavy.
+    plot_seed : int
+        Seed for the subsample, for reproducible plots across re-runs.
+
+    Returns
+    -------
+    dict or None
+        Coefficient dict from `fit_reference_cal`.
+    """
+    coef = fit_reference_cal(ref_values, target_values, anchor=anchor, z_ref=z_ref, z_tgt=z_tgt)
+    resolved_color = (colors or {}).get(target_label, color or 'gray')
+
+    ref_arr = np.asarray(ref_values, dtype=float)
+    tgt_arr = np.asarray(target_values, dtype=float)
+    if plot_sample_size is not None and len(ref_arr) > plot_sample_size:
+        idx = np.random.default_rng(plot_seed).choice(len(ref_arr), size=plot_sample_size, replace=False)
+        plot_ref, plot_tgt = ref_arr[idx], tgt_arr[idx]
+        diag_for_plot = np.asarray(diagnostic_values, dtype=float)[idx] if diagnostic_values is not None else None
+    else:
+        plot_ref, plot_tgt = ref_arr, tgt_arr
+        diag_for_plot = diagnostic_values
+
+    fig_fit = plot_calibration_scatter(
+        {target_label: plot_ref}, {target_label: plot_tgt},
+        {target_label: coef} if coef else {}, {target_label: resolved_color},
+        x_title=x_label, y_title=y_label,
+        title=f'{title_prefix}{target_label} vs reference — fit + 1:1 line')
+    fig_fit.show()
+
+    if diag_for_plot is not None and coef is not None:
+        resid = plot_tgt - (coef['slope'] * plot_ref + coef['intercept'])
+        fig_diag, _ = plot_residual_diagnostic(resid, diag_for_plot,
+                label=diagnostic_label, color=resolved_color)
+        fig_diag.update_layout(title=f'{target_label}: ' + fig_diag.layout.title.text)
+        fig_diag.show()
+
+    return coef
