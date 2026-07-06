@@ -24,7 +24,6 @@ Usage:
 """
 
 import json
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,10 +32,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from paths import STAGE_02_SOURCES, STAGE_02_DIR, REPO_ROOT
+from paths import STAGE_02_SOURCES, STAGE_02_DIR, STAGE_01_DIR, REPO_ROOT
 from config import PLATFORM_BY_INST_DATE
 from src.readers import INSTRUMENT_TASKS, make_spectra_reader
 from src.align import raw_stem
+from src.provenance import git_info, check_clean, upstream_ref
 
 # ── Task list (built from registry) ───────────────────────────────────────────
 
@@ -55,20 +55,9 @@ TASKS = [
 
 STUBS = [inst for inst in STAGE_02_SOURCES if inst not in INSTRUMENT_TASKS]
 
-# ── Manifest helper ───────────────────────────────────────────────────────────
-
-def _git_info():
-    try:
-        h = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=str(REPO_ROOT), text=True
-        ).strip()
-        dirty = subprocess.call(["git", "diff", "--quiet"], cwd=str(REPO_ROOT)) != 0
-        return h, dirty
-    except Exception:
-        return "unknown", False
-
-
 # ── Main loop ─────────────────────────────────────────────────────────────────
+
+check_clean(REPO_ROOT, context='Stage 02')
 
 STAGE_02_DIR.mkdir(parents=True, exist_ok=True)
 manifest_stats: dict = {}
@@ -186,12 +175,13 @@ print(f"\n  Routing manifest: {len(routing)} entries  (MML={mml_n}, WYO={wyo_n})
 
 # ── Write run manifest ────────────────────────────────────────────────────────
 
-git_hash, git_dirty = _git_info()
+git_hash, git_dirty = git_info(REPO_ROOT)
 manifest = {
     "stage":       "02_standardize",
     "run_utc":     datetime.now(timezone.utc).isoformat(),
     "git_hash":    git_hash,
     "git_dirty":   git_dirty,
+    "upstream":    upstream_ref(STAGE_01_DIR / "ts_offsets.json"),
     "instruments": manifest_stats,
 }
 manifest_path = STAGE_02_DIR / "run_manifest.json"

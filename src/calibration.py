@@ -118,7 +118,6 @@ campaign-specific annotations)
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -621,13 +620,15 @@ def copy_passthrough_dir(src_dir, dst_dir):
 # ── Metadata ─────────────────────────────────────────────────────────────────────
 
 def git_info(repo_root):
-    """Return (commit_hash, is_dirty) for provenance tagging. ('unknown', False) on failure."""
-    try:
-        h = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=str(repo_root), text=True).strip()
-        dirty = subprocess.call(['git', 'diff', '--quiet'], cwd=str(repo_root)) != 0
-        return h, dirty
-    except Exception:
-        return 'unknown', False
+    """Return (commit_hash, is_dirty) for provenance tagging. ('unknown', False) on failure.
+
+    Thin re-export of `src.provenance.git_info` — kept here so existing `cal.git_info(...)`
+    call sites don't need to change; new code should import from `src.provenance` directly,
+    which also has `check_clean` (dirty-tree warning) and `upstream_ref` (cross-stage
+    provenance chaining).
+    """
+    from src.provenance import git_info as _git_info
+    return _git_info(repo_root)
 
 
 # ── Plotting ─────────────────────────────────────────────────────────────────────
