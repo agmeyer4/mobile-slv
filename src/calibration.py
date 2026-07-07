@@ -65,6 +65,11 @@ Ambient cross-calibration (continuous overlap, no tank needed)
         instrument's ambient reading against another's using every overlapping sample
         (huge n) instead of a handful of discrete tank points. Fit the pairs with the
         existing `linreg`.
+    bin_paired_values(x, y, bins, min_n=3)
+        Aggregate matched pairs into per-bin means (pure aggregation, no stability/
+        transition heuristics) — turns a density-imbalanced pairing (e.g. mostly-ambient
+        overlap) into a handful of equally-weighted representative points spanning the
+        range, optionally combined with real tank-window points for full-range coverage.
 
 Zero+span (baseline anchor + peak-alignment span)
     tank_window_stats(series, windows_by_date, tank_key)
@@ -447,6 +452,42 @@ def pair_series_nearest(ref, target, tolerance_s=1):
     merged = pd.merge_asof(r_df, t_df, on='ts', tolerance=pd.Timedelta(seconds=tolerance_s),
                            direction='nearest').dropna()
     return merged.set_index('ts')
+
+
+def bin_paired_values(x, y, bins, min_n=3):
+    """Aggregate matched (x, y) pairs into per-bin means, binning by x.
+
+    Pure aggregation — no transition/stability heuristics. For turning a huge,
+    density-imbalanced population of matched pairs (e.g. `pair_series_nearest`'s ambient
+    overlap, overwhelmingly clustered near baseline) into a handful of representative
+    points spanning the range, each weighted equally by `linreg` regardless of how many
+    raw samples fed it — a small number of high-population bins won't dominate a fit just
+    because they have far more raw points than a sparse-but-real high-concentration bin.
+
+    Parameters
+    ----------
+    x, y : array-like
+        Matched pairs, same length (e.g. `pair_series_nearest` output's 'ref'/'target'
+        columns, or any other already-matched arrays).
+    bins : array-like
+        Bin edges passed to `pd.cut` (e.g. `np.linspace` or explicit representative
+        levels).
+    min_n : int
+        Drop any bin with fewer than this many raw pairs — avoids reporting a
+        representative point built from a handful of noisy samples.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns 'x_mean', 'y_mean', 'n', one row per non-empty, non-dropped bin.
+    """
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    df = pd.DataFrame({'x': x[mask], 'y': y[mask]})
+    df['bin'] = pd.cut(df['x'], bins=bins)
+    agg = df.groupby('bin', observed=True).agg(x_mean=('x', 'mean'), y_mean=('y', 'mean'),
+                                               n=('x', 'size'))
+    return agg[agg['n'] >= min_n].reset_index(drop=True)
 
 
 # ── Zero + span calibration (tank zero anchor + peak-alignment span) ──────────────
