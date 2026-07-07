@@ -54,6 +54,10 @@ Peak-alignment fitting
         series' max within a window around the peak time. One row per matched event.
 
 Ambient cross-calibration (continuous overlap, no tank needed)
+    dates_for_platform(routing_manifest, platform, prefix=None)
+        Sorted 'YYYYMMDD' dates where routing_manifest[key] == platform, optionally
+        restricted to one instrument via a raw_stem prefix — the `dates` argument to
+        restrict_series below often comes from here.
     restrict_series(series, dates, windows_by_date=None, pad_min=5)
         Restrict a series to specific dates, optionally excluding tank windows.
     pair_series_nearest(ref, target, tolerance_s=1)
@@ -80,6 +84,19 @@ Zero+span (baseline anchor + peak-alignment span)
     fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None)
         Dispatches to linreg (anchor='ols') or fit_zero_span (anchor='pinned') — see
         "Recommended entry points" above; this is the lower-level fit-only piece.
+
+Candidate comparison (for species where more than one method is viable)
+    compare_candidate_coefs(candidates, stats_df, tank, species_key, inst)
+        Apply every candidate coefficient (e.g. {'tank': ..., 'reference': ...}, either
+        may be None) back to one instrument's own tank-window means and report
+        RMS/max-abs residual per candidate, side by side — the common yardstick for
+        deciding which method to lock in. None entries are skipped, so a species with
+        only one viable candidate (C3H8: tank only; C2H6: reference only) calls this
+        with the same shape as one with two (CH4).
+    assess_tank_coverage(tank, species_key, ambient_series, quantiles=(0.5, 0.99, 1.0))
+        Numeric version of "does the tank's certified range actually cover what we need
+        to calibrate" — the tank's max certified point vs. requested quantiles of a real
+        ambient/plume population. Returns ratios, not a verdict.
 
 Applying calibration
     apply_linear(series, coef)
@@ -114,6 +131,9 @@ campaign-specific annotations)
     plot_residual_diagnostic(residual, diagnostic, label, color, corr_threshold=0.3)
         Residual-vs-diagnostic-variable scatter. Returns (fig, corr) so the caller
         decides whether/how to flag it.
+    plot_range_levels(levels, x_title, title)
+        Log-scale dumbbell plot of named (label, value, color) levels — e.g. a tank's
+        certified point against ambient/plume percentiles, for `assess_tank_coverage`.
 """
 
 import re
@@ -341,6 +361,32 @@ def find_peak_matches(ref_series, target_series, height, prominence, min_distanc
 
 # ── Ambient cross-calibration (continuous overlap, no tank needed) ───────────────
 
+def dates_for_platform(routing_manifest, platform, prefix=None):
+    """Sorted 'YYYYMMDD' dates where `routing_manifest[key] == platform`.
+
+    Parameters
+    ----------
+    routing_manifest : dict
+        raw_stem -> platform tag (e.g. Stage 02's routing_manifest.json, keyed by
+        Aeris raw_stem like 'Ultra100321_260203_210000').
+    platform : str
+        Platform tag to match (e.g. 'WYO', 'MML').
+    prefix : str, optional
+        If given, only keys starting with this raw_stem prefix count — restricts to one
+        instrument (e.g. 'Ultra100321') instead of every instrument on that platform.
+
+    Returns
+    -------
+    list[str]
+        'YYYYMMDD' date tags, parsed from each matching key via `src.align.date_tag`.
+    """
+    from src.align import date_tag
+    return sorted({
+        '20' + date_tag(k) for k, v in routing_manifest.items()
+        if v == platform and (prefix is None or k.startswith(prefix))
+    })
+
+
 def restrict_series(series, dates, windows_by_date=None, pad_min=5):
     """Restrict a series to specific calendar dates, optionally excluding tank windows.
 
@@ -543,6 +589,125 @@ def fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt
         return fit_zero_span(ref_values, target_values, z_ref, z_tgt)
     else:
         raise ValueError(f"unknown anchor {anchor!r} (expected 'ols' or 'pinned')")
+
+
+# ── Candidate comparison ─────────────────────────────────────────────────────────
+#
+# For a species where more than one calibration method is viable (e.g. CH4: tank-anchored
+# AND reference-cross-cal), these two functions let a campaign compute every viable
+# candidate and judge them on a common, numeric yardstick instead of eyeballing separate
+# plots -- the "compute both, compare, lock one in" workflow this module is meant to
+# support generically. Neither function embeds a pass/fail verdict: both return numbers
+# for a human to read and a choice to be locked in explicitly by the caller (e.g. the
+# notebook's own CAL_METHOD_LOCKED), matching this project's general preference for
+# keeping judgment calls human-reviewed rather than silently automated.
+
+def compare_candidate_coefs(candidates, stats_df, tank, species_key, inst):
+    """Apply each candidate coefficient back to one instrument's tank-window means.
+
+    The common yardstick every candidate method is judged against, regardless of how it
+    was fit: this instrument's own tank-window means (from `window_stats`) versus the
+    tank's certified concentrations (from `parse_tank_details`) -- the one dataset
+    available for every species/instrument combination in this campaign, whether or not
+    the candidate itself was fit on tank data (a reference-fit candidate still has an
+    instrument response to compare against the tank's known concentrations, even though
+    it wasn't trained on them).
+
+    Parameters
+    ----------
+    candidates : dict[str, dict | None]
+        candidate_name (e.g. 'tank', 'reference') -> coefficient dict (same shape
+        returned by `fit_species` / `fit_reference_cal`), or None if that candidate
+        wasn't fit / isn't viable for this instrument. None entries are skipped -- this
+        is what lets a species with only one viable method (C3H8: only 'tank'; C2H6:
+        only 'reference') reuse this same function as a species with two (CH4: both),
+        with no special-casing.
+    stats_df : pd.DataFrame
+        Output of `window_stats`, must have an `f'{inst}_mean'` column.
+    tank : dict
+        Output of `parse_tank_details`.
+    species_key : str
+        e.g. 'CH4_ppm'.
+    inst : str
+        Which instrument's window means to score the candidates against.
+
+    Returns
+    -------
+    pd.DataFrame
+        Indexed by candidate name (only candidates present and non-None). Columns:
+        'n_tank_points', 'rms_resid', 'max_abs_resid' (residual = corrected - true tank
+        concentration, in species_key's units), plus the candidate's own 'r2' and 'n'
+        (its fit diagnostics for context -- 'n' there is the candidate's OWN fit sample
+        size, which may be much larger than 'n_tank_points', e.g. a reference-fit
+        candidate trained on thousands of ambient pairs but evaluated here at only a
+        handful of tank points). Empty DataFrame if no candidate is usable. No pass/fail
+        column -- judging "adequate" is left to whoever reads the table.
+    """
+    col = f'{inst}_mean'
+    if col not in stats_df.columns:
+        return pd.DataFrame()
+    xt = stats_df['tank_key'].map(lambda k: tank.get(k, {}).get(species_key)).astype(float)
+    rows = []
+    for name, coef in candidates.items():
+        if coef is None:
+            continue
+        corrected = apply_linear(stats_df[col].astype(float), coef)
+        resid = (corrected - xt).values
+        resid = resid[np.isfinite(resid)]
+        rows.append({
+            'candidate': name,
+            'n_tank_points': int(resid.size),
+            'rms_resid': float(np.sqrt(np.mean(resid ** 2))) if resid.size else np.nan,
+            'max_abs_resid': float(np.max(np.abs(resid))) if resid.size else np.nan,
+            'r2': coef.get('r2', np.nan),
+            'n': coef.get('n', np.nan),
+        })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).set_index('candidate')
+
+
+def assess_tank_coverage(tank, species_key, ambient_series, quantiles=(0.5, 0.99, 1.0)):
+    """Compare the tank's certified concentration range against a real ambient/plume
+    population, as numbers instead of an eyeballed plot.
+
+    Generalizes the check that shows a species' certified tank point(s) may sit far
+    below real plume levels (e.g. C2H6's single NOAA point, 1.63 ppb) into a reusable
+    function: is there enough *certified range* to trust a tank fit for this species,
+    given what it actually needs to cover? Returns numbers, not a verdict -- deciding
+    "adequate" is a human judgment call left to whoever reads the table.
+
+    Parameters
+    ----------
+    tank : dict
+        Output of `parse_tank_details`.
+    species_key : str
+        e.g. 'C2H6_ppb', 'CH4_ppm'.
+    ambient_series : pd.Series
+        The population the calibration actually needs to span -- typically ambient +
+        plume, with tank windows already excluded (e.g. via `restrict_series`).
+        Quantile 1.0 (max) captures the largest plume peak.
+    quantiles : tuple of float
+        Which quantiles of `ambient_series` to report against the tank's max certified
+        point.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row. `tank_max_certified` column, one `q{q}_value` column per requested
+        quantile, and one `tank_max_over_q{q}` ratio column per quantile (>1 means the
+        tank's top certified point exceeds that population level; <1 flags a coverage
+        gap -- deliberately not converted into a bool/verdict here).
+    """
+    certified = [v[species_key] for v in tank.values() if v.get(species_key) is not None]
+    tank_max = float(max(certified)) if certified else float('nan')
+    amb = ambient_series.dropna()
+    row = {'tank_max_certified': tank_max}
+    for q in quantiles:
+        qval = float(amb.quantile(q)) if len(amb) else float('nan')
+        row[f'q{q}_value'] = qval
+        row[f'tank_max_over_q{q}'] = (tank_max / qval) if qval else float('nan')
+    return pd.DataFrame([row])
 
 
 # ── Applying calibration ─────────────────────────────────────────────────────────
@@ -969,6 +1134,37 @@ def plot_residual_diagnostic(residual, diagnostic, label, color, corr_threshold=
     fig.update_layout(title=title, xaxis_title=label, yaxis_title='fit residual',
                        template='plotly_white', height=380)
     return fig, corr
+
+
+def plot_range_levels(levels, x_title, title):
+    """Log-scale dumbbell plot comparing named concentration levels on one axis.
+
+    Generic version of the "one tank point vs the range we must calibrate" figure --
+    any list of (label, value, color) levels, not tied to a specific species/campaign.
+    Pair with `assess_tank_coverage` for the numbers behind the picture.
+
+    Parameters
+    ----------
+    levels : list[tuple[str, float, str]]
+        (label, value, hex color) rows, one marker each, plotted top to bottom in the
+        order given.
+    x_title : str
+        e.g. 'C2H6 (ppb, log scale)'.
+    title : str
+
+    Returns
+    -------
+    go.Figure
+    """
+    fig = go.Figure()
+    for name, val, color in levels:
+        fig.add_trace(go.Scatter(x=[val], y=[name], mode='markers+text',
+                                 marker=dict(color=color, size=13),
+                                 text=[f'  {val:,.2f}'], textposition='middle right',
+                                 showlegend=False))
+    fig.update_xaxes(type='log', title_text=x_title)
+    fig.update_layout(title=title, template='plotly_white', height=340, margin=dict(l=230))
+    return fig
 
 
 # ── Calibration workflows (recommended entry points: fit + standard checks) ──────
