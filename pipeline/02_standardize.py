@@ -101,6 +101,13 @@ for task in TASKS:
                 continue
             df["ts_status"] = ts_status
             out_path = out_dir / (path.stem + ".parquet")
+            # OPEN ITEM (see CLAUDE.md "Known issues"): Aeris files are non-monotonic in
+            # time — the instrument resyncs its clock, stepping the timestamp back ~1-2 s
+            # every ~69 rows. Not introduced here; present identically in raw. Harmless
+            # inside this repo (align.load_aligned_series sorts) but Stage 03/04 is the
+            # delivered product and direct readers will trip on it. Fix is `df.sort_index()`
+            # on the next line — verified to drop nothing (0 exact-duplicate timestamps).
+            # Deliberately NOT applied yet: needs a full 01->04 rerun to propagate.
             df.to_parquet(out_path)
             print(f"  {prog}  OK      {path.name}  [{len(df):,} rows]")
             n_ok += 1
