@@ -35,6 +35,11 @@ file_quality(manifest, instrument, path)
 load_aligned_series(stage03_dir, instrument, subdir, col)
     Load all good aligned Parquet files for an instrument into a single Series.
     Returns None if no files found or the instrument dir doesn't exist yet.
+
+resume_review(lag_offsets_path, lags_key, instrument)
+    Reload a previously saved (confirmed, rejected) review state for one instrument
+    from lag_offsets_{wyo,mml}.json, so a fresh kernel can re-run 03a/03b end to end
+    without redoing — or silently discarding — the manual lag review.
 """
 
 import numpy as np
@@ -194,6 +199,54 @@ def reference_bad_dates(quality_manifest: dict, ref_instrument: str, ref_dir) ->
         except Exception:
             pass
     return bad_dates
+
+
+def resume_review(lag_offsets_path, lags_key: str, instrument: str) -> tuple:
+    """Reload a saved lag review for one instrument as (confirmed, rejected).
+
+    The 03a/03b review widgets hold their state in notebook globals, and
+    `save_lag_offsets_*()` serialises whatever is in those globals. That means a
+    fresh kernel running the notebook top-to-bottom would write an EMPTY manifest
+    over a real one and then apply zero lags to everything. Seeding the globals
+    from the manifest on startup makes the notebooks safely re-runnable: the apply
+    and pass-through cells can be re-executed after an upstream change (e.g. a
+    Stage 02 rerun) without touching the human review.
+
+    Parameters
+    ----------
+    lag_offsets_path : path-like
+        STAGE_03_DIR/'lag_offsets_wyo.json' or .../'lag_offsets_mml.json'.
+    lags_key : str
+        Top-level key holding the per-instrument lag dicts — 'lags' in the WYO
+        manifest, 'tube_lags' in the MML one.
+    instrument : str
+        e.g. 'WYO_aerisultra460'.
+
+    Returns
+    -------
+    (confirmed, rejected) : (dict[str, float], set[str])
+        Empty ({}, set()) if the manifest is missing or has no entry for the
+        instrument — i.e. a first-time review starts from scratch as before.
+
+    Note: saved 'lags' exclude rejected stems (save_lag_offsets_* filters them out),
+    so a resumed session shows rejects as rejected but without their original slider
+    value. That is the same information the apply step consumes, so nothing is lost.
+    """
+    import json
+    lag_offsets_path = Path(lag_offsets_path)
+    if not lag_offsets_path.exists():
+        return {}, set()
+    try:
+        with open(lag_offsets_path) as fh:
+            saved = json.load(fh)
+    except Exception as e:
+        print(f'  [WARN] could not read {lag_offsets_path.name}: {e} — starting empty')
+        return {}, set()
+    confirmed = dict(saved.get(lags_key, {}).get(instrument, {}))
+    rejected  = set(saved.get('rejected', {}).get(instrument, []))
+    print(f'  resumed {instrument}: {len(confirmed)} confirmed, {len(rejected)} rejected'
+          f'  (from {lag_offsets_path.name})')
+    return confirmed, rejected
 
 
 def load_aligned_series(

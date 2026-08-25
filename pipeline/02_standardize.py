@@ -10,6 +10,9 @@ What "standardized" means:
   - Science columns are renamed to clean cross-instrument names (CH4_ppm, etc.)
   - All other original columns are preserved unchanged
   - ts_status column added: "utc_corrected" | "no_coverage" | "trusted"
+  - ts_source column guaranteed present: "logger_epoch" (per-row host clock from the
+    Stage 01 logger join), "median_offset" (scalar-offset fallback, keeps the ~2 s Aeris
+    sawtooth), or "instrument_clock" (instrument never passed through Stage 01)
   - Format is always Parquet (column projection supported via pd.read_parquet columns=)
 
 Tasks are built from INSTRUMENT_TASKS in src/readers.py. Adding a new instrument:
@@ -100,14 +103,32 @@ for task in TASKS:
                 empty_files.append(path.name)
                 continue
             df["ts_status"] = ts_status
+            # Instruments that never pass through Stage 01 keep the instrument's own
+            # clock; Stage 01 sets ts_source per row for the two it corrects.
+            if "ts_source" not in df.columns:
+                df["ts_source"] = "instrument_clock"
             out_path = out_dir / (path.stem + ".parquet")
-            # OPEN ITEM (see CLAUDE.md "Known issues"): Aeris files are non-monotonic in
-            # time — the instrument resyncs its clock, stepping the timestamp back ~1-2 s
-            # every ~69 rows. Not introduced here; present identically in raw. Harmless
-            # inside this repo (align.load_aligned_series sorts) but Stage 03/04 is the
-            # delivered product and direct readers will trip on it. Fix is `df.sort_index()`
-            # on the next line — verified to drop nothing (0 exact-duplicate timestamps).
-            # Deliberately NOT applied yet: needs a full 01->04 rerun to propagate.
+            # Last-resort monotonicity net — NOT the timestamp fix.
+            #
+            # The real fix is Stage 01's per-row host-clock join, which is monotonic by
+            # construction and covers 97.5% of delivered Ultra321 rows. What survives to
+            # here is the residue: rows with ts_source == "median_offset" (no logger row,
+            # so the Aeris sawtooth remains) and Ultra460, which has no logger at all but
+            # only 8 backsteps campaign-wide.
+            #
+            # Sorting is deliberately a last resort, because sorting by a timestamp that
+            # is known to be wrong reorders rows away from true acquisition order — on a
+            # toughbook-verified file it created 313 host-clock order inversions where the
+            # original file order had zero. It is applied anyway so every delivered file
+            # is ingestible (`merge_asof` raises on unsorted keys; rolling/resample/
+            # .loc[a:b] silently misbehave), and ts_source tells a consumer exactly which
+            # rows could have been touched.
+            #
+            # Stable sort so tied timestamps keep acquisition order; nothing is dropped
+            # (0 exact-duplicate timestamps campaign-wide). No-op for rows whose
+            # ts_source is "logger_epoch". Stage 03's rigid lag shift and Stage 04's
+            # linear calibration both preserve row order, so this propagates to 04.
+            df = df.sort_index(kind="stable")
             df.to_parquet(out_path)
             print(f"  {prog}  OK      {path.name}  [{len(df):,} rows]")
             n_ok += 1

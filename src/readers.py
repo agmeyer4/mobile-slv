@@ -12,7 +12,8 @@ Readers:
   read_picarro(path)                  — Picarro .dat files
   read_lgr(path)                      — LGR final .dat files
   read_sprinter(path)                 — Sprinter .csv files
-  read_spectra(spectra_path, raw_dir) — headerless Aeris Spectra/Spectralite .txt files
+  read_spectra(spectra_path, raw_dir) — headerless Aeris Spectra/Spectralite .txt files;
+                                        recovers ts_source from the paired Raw file
   read_gps(path)                      — toughbook GPS .dat files (NMEA-encoded);
                                         index=toughbook epoch; epoch + gps_receiver_utc columns for clock correction
   read_anem(path)                     — toughbook Anemometer .dat files (Trisonica-encoded)
@@ -152,6 +153,40 @@ def _instrument_cols_from_raw(raw_dir) -> list[str]:
     return cols[: tgas_idx + 1]
 
 
+def _ts_source_from_paired_raw(spectra_path, raw_dir) -> dict | None:
+    """
+    Map {corrected Time Stamp string -> ts_source} from the Raw file paired with a
+    Spectra file, or None if unavailable.
+
+    Spectra files are headerless and positional — `read_spectra` derives the spectral
+    channel count from the total column width — so Stage 01 cannot write a ts_source
+    column into them without mislabelling every channel. It is recovered here instead.
+    This is exact rather than approximate because Raw, Eng and Spectra share an
+    identical timestamp sequence (verified 86,731/86,731 exact string match, same
+    order) and corrected timestamps are unique within a file.
+
+    Returns None for instruments that never pass through Stage 01 (e.g. Ultra460
+    Spectralite), whose Raw files carry no ts_source column.
+    """
+    stem = Path(spectra_path).stem
+    for suffix in ("spectra", "spectralite"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    raw_dir = Path(raw_dir)
+    for candidate in (raw_dir / f"{stem}.txt", raw_dir / "no_coverage" / f"{stem}.txt"):
+        if not candidate.exists():
+            continue
+        try:
+            paired = pd.read_csv(candidate, usecols=["Time Stamp", "ts_source"], dtype=str)
+        except (ValueError, KeyError):
+            return None          # no ts_source column — not a Stage 01 instrument
+        except Exception:
+            return None
+        return dict(zip(paired["Time Stamp"].str.strip(), paired["ts_source"]))
+    return None
+
+
 def _epoch_to_utc_index(epoch_series) -> pd.DatetimeIndex:
     return pd.to_datetime(epoch_series, unit="s", utc=True)
 
@@ -262,9 +297,13 @@ def read_spectra(spectra_path, raw_dir) -> pd.DataFrame | None:
         raise ValueError(f"Too few columns ({df.shape[1]}) for {spectra_path.name}")
     df.columns = instrument_cols + ["rd0", "rd1"] + [f"spec_{i:04d}" for i in range(1, n_spec + 1)]
     df = df.copy()
-    ts = pd.to_datetime(df["Time Stamp"].str.strip(), format=AERIS_TS_FORMAT, errors="coerce")
+    ts_str = df["Time Stamp"].str.strip()
+    ts = pd.to_datetime(ts_str, format=AERIS_TS_FORMAT, errors="coerce")
     valid = ts.notna()
     df = df[valid].copy()
+    source_map = _ts_source_from_paired_raw(spectra_path, raw_dir)
+    if source_map is not None:
+        df["ts_source"] = ts_str[valid].map(source_map).fillna("unpaired")
     df.index = ts[valid].dt.tz_localize("UTC")
     df.index.name = "TIMESTAMP"
     df = df.drop(columns=["Time Stamp"])
