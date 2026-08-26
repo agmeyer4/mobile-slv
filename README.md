@@ -65,6 +65,10 @@ jupyter nbconvert --execute --inplace pipeline/04_calibration.ipynb
 python scripts/check_timestamps.py --stage 02 03 04
 ```
 
+> **Doing a full re-run for a release?** Follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — the
+> six-phase procedure for going from a working branch to a tagged, reproducible freeze,
+> including what to verify at each stage and the traps that have actually cost time.
+
 `pipeline/03_survey.ipynb` is a **one-time** manual quality survey (341 files across 7
 instruments) whose result lives in `03_instrument_aligned/quality_manifest.yaml`. It is not
 part of a normal re-run — the manifest persists and stays valid across upstream changes.

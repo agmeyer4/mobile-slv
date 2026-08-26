@@ -5,6 +5,9 @@ output structure, conventions, reproducibility, known issues, and the `src/` mod
 This file holds only the things that bite you while *working on* the repo, which don't belong
 in user-facing docs.
 
+For a full re-run or a release freeze, follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md) rather than
+improvising the order — the phase ordering is forced by how manifests and freeze tags work.
+
 ## Scope
 
 This repo is **ETL + QA/QC, including calibration**. Open-ended scientific analysis belongs in
