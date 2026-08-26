@@ -1,14 +1,29 @@
 # mobile-slv
 
-ETL and QA/QC pipeline for the **Salt Lake Valley Winter Mobile Campaign 2026** (Jan 15 – Mar 10).
+## STATUS: v2 pipeline — ETL + QA/QC (incl. calibration)
 
+Supersedes [`v1.0-etl-freeze`](https://github.com/agmeyer4/mobile-slv/releases/tag/v1.0-etl-freeze),
+which froze at `recleaned/` and explicitly excluded calibration. **v2 rebuilds the pipeline as
+four numbered stages and brings calibration in as Stage 04.**
+
+**Scope rule:** this repo holds *deterministic, reproducible-from-a-log* data preparation —
+determine a correction from a known reference (logger clock, cross-correlation lag, tank
+manifest), save it, apply it once. Open-ended scientific interpretation, exploratory
+comparison, and spectra inspection belong in
+[`mobile-hydrocarbon-analysis`](https://github.com/agmeyer4/mobile-hydrocarbon-analysis).
+Calibration qualifies under that rule; it is not an exception to it. Before extending scope
+further, apply the same test — deterministic-from-a-log, or open-ended?
+
+**The final ETL output is `04_calibrated/`**, which downstream analysis reads directly. It is a
+complete mirror of Stage 03's breadth (calibrated gas files plus untouched pass-through of
+spectra, GPS, anemometer, sprinter, and LGR), so analysis needs only that one directory.
+
+---
+
+ETL and QA/QC pipeline for the **Salt Lake Valley Winter Mobile Campaign 2026** (Jan 15 – Mar 10).
 Takes raw instrument files through clock correction, standardization, cross-instrument time
 alignment, and gas calibration, producing an analysis-ready Parquet dataset with full
 provenance back to the raw data and the exact commit that produced it.
-
-Open-ended scientific analysis lives in
-[`mobile-hydrocarbon-analysis`](https://github.com/agmeyer4/mobile-hydrocarbon-analysis).
-**Calibration is part of this repo** (Stage 04), not the analysis repo.
 
 ---
 
