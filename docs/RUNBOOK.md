@@ -136,7 +136,7 @@ problem before the manual part is worth hours.
 | **01** | Manifest totals; backstep counts; `ts_source` on every corrected file | Row counts preserved per file, zero duplicates introduced, backsteps collapse toward zero |
 | **02** | `check_timestamps --stage 02`; per-group `ts_source`; reconcile counts against 01 | 0 unsorted, 0 backsteps; Raw and Eng breakdowns identical per instrument; only known duplicate sources flagged |
 | **03** | **Read `lag_offsets_*.json` directly.** One entry per non-rejected session | `warn: 0` in the apply manifest *and* a fully populated lag dict |
-| **04** | Read a calibrated column back off disk against `(raw * scale_in - intercept) / slope`; confirm dropped corrections absent | Max abs difference `0.0`; correction count matches the locks; no `MISMATCH` in Section H |
+| **04** | Read a calibrated column back off disk against `(raw * scale_in - intercept) / slope`; confirm dropped corrections absent and caveated ones carry their `caveat` field | Max abs difference `0.0`; correction count matches the locks; no `MISMATCH` in Section H |
 | **all** | `git_dirty` and the `upstream` chain in every manifest | `false` everywhere; each stage points at the run that actually fed it |
 
 **Never accept a stage on its own printed summary.** Every failure worth catching so far has
@@ -150,9 +150,10 @@ counts as `ok`, a missing survey still runs, a dirty tree still writes output.
 *The tag and the data-side record are two halves of one thing.*
 
 First refresh any documented number the run may have moved. Reason strings and README
-statistics quoting fit results go stale when the alignment changes — in particular the
-`CAL_DROPPED` justification in `04_calibration.ipynb`, which cites specific R² and
-interference-correlation values.
+statistics quoting fit results go stale when the alignment changes. As of 2026-08-27 the
+`CAL_DROPPED`/`CAL_CAVEATS` reason strings and the Section D box deliberately quote **no**
+fit statistics for this reason — the live numbers live in `calibration_coefs.json`'s `r2`
+fields and `04_calibration_qc.ipynb` §E. Check any that have crept back in.
 
 ```bash
 # executed HTML next to the data it produced — one per notebook stage

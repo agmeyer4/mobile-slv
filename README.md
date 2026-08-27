@@ -252,10 +252,19 @@ them to the code path so an edited lock without a matching code change fails lou
 being computable. A dropped correction is still **fit and plotted** in the notebook (so the
 evidence for rejecting it stays on the page) but is excluded from `calibration_coefs.json` and
 never applied, so that instrument simply has no calibrated column for that gas.
+**Currently empty** — nothing is dropped.
 
-| dropped | reason |
+**`CAL_CAVEATS`** — same key shape, opposite disposition: corrections that *are* saved and
+applied but carry a `caveat` string into their `calibration_coefs.json` record. The presence
+of a `caveat` field is the machine-readable "do not use this unqualified" flag.
+
+| caveated | reason |
 |---|---|
-| `('C2H6', 'Ultra321')` | R²(span) = 0.826 (vs Pico017's 0.998) and the fit residual correlates **+0.813 with C3H8** at the matched peaks — C3H8 leaking into the C2H6 retrieval, which no anchor choice fixes. Re-verified on the corrected timeline: the Stage 01 fix moved the interference correlation +0.947 → +0.813 but left R²(span) unchanged, so the defect is structural, not a timing artifact. **Ultra321 files carry no `C2H6_ppb_cal` column.** Its CH4 and C3H8 corrections are unaffected. |
+| `('C2H6', 'Ultra321')` | **Retained for diagnostic use, not as a quantitative C2H6 measurement.** C3H8 spectral cross-talk: its span fit is far looser than Pico017's and the fit residual correlates strongly and positively with C3H8 at the matched peaks — no anchor choice fixes a spectral interference. The ambient-median anchor makes the *baseline* match Ultra460 by construction, so the baseline looks right while individual peak magnitudes are not reliable. Dropped 2026-08-26; **reinstated 2026-08-27** because characterising when a C2H6 retrieval degrades in the presence of propane/methane is a downstream deliverable that needs the calibrated column. Its CH4 and C3H8 corrections are unaffected. |
+
+Live fit statistics are deliberately not quoted here — read them from
+`calibration_coefs.json`'s own `r2` fields and `04_calibration_qc.ipynb` §E, which are
+regenerated with each run.
 
 CH4/C3H8 use a single multi-point OLS against the tank ladder (not piecewise — the residual
 pattern that would motivate a low/high split appears identically in Picarro, so it reflects
@@ -384,7 +393,10 @@ These are properties of the delivered dataset. Read before treating any column a
   baseline). This makes C2H6_cal cross-instrument-consistent but **not** an absolute
   measurement. The whole C2H6 calibration also rests on Ultra460's C2H6 being correct, which
   is assumed, not independently validated.
-- **Ultra321 has no calibrated C2H6.** See `CAL_DROPPED` above.
+- **Ultra321's calibrated C2H6 is diagnostic only.** It has a `C2H6_ppb_cal` column, but its
+  record in `calibration_coefs.json` carries a `caveat` field: C3H8 cross-talk makes its peak
+  magnitudes unreliable. It is shipped so the failure can be characterised downstream — not as
+  a measurement. See `CAL_CAVEATS` above.
 - **MML-date calibration is an extrapolation.** All three tank events fell inside the WYO
   window (Feb 3–12); Feb-12 coefficients are applied to the January and March MML dates with
   no direct tank evidence there.
@@ -420,7 +432,8 @@ by the pipeline itself — `paths.py` and `src/readers.py::INSTRUMENT_TASKS` dri
 instrument keys match across all three.
 
 Note that a `gases` entry lists what an instrument physically **measures**, which is not the
-same as what has a calibrated `*_cal` column — see `CAL_DROPPED`.
+same as what has a calibrated `*_cal` column (see `CAL_DROPPED`), nor the same as what is safe
+to use unqualified (see `CAL_CAVEATS`).
 
 ### `archive_legacy_analysis/`
 
