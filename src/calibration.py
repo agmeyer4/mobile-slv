@@ -26,6 +26,10 @@ Recommended entry points for a new campaign or a new species
     fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None)
         The fit alone, no plots — anchor='ols' for plain regression, anchor='pinned' to
         pin the baseline to a known (z_ref, z_tgt) point and fit only the gain.
+    reanchor_intercept(coef, ref_values, target_values, q=0.5)
+        Keep an existing fit's slope, move only its offset so the baseline matches a
+        co-located reference at quantile q. For a tank fit whose span is trustworthy but
+        whose intercept is dominated by high-concentration leverage.
 
     Need more control than these give (e.g. mobile-slv's own CH4 tank fit, which reuses
     one shared multi-instrument stats_df for error bars AND a multi-date drift check)?
@@ -584,6 +588,72 @@ def fit_zero_span(ref_peaks, target_peaks, z_ref, z_tgt):
     return {'slope': 1.0 / gain, 'intercept': z_tgt - z_ref / gain,
             'gain': gain, 'r2': r2, 'n': int(m.sum()),
             'z_ref': float(z_ref), 'z_tgt': float(z_tgt)}
+
+
+def reanchor_intercept(coef, ref_values, target_values, q=0.5, scale_in=None):
+    """Shift a fitted calibration's intercept so its baseline matches a reference's.
+
+    Keeps ``slope`` exactly as fitted -- so the span stays anchored to whatever the
+    original fit was traceable to, typically a certified tank ladder -- and moves only
+    the offset, so that ``apply_linear``'s output agrees with a co-located reference
+    instrument at the chosen ambient quantile. Same "span from one source, baseline from
+    another" structure as `fit_zero_span`, but applied *on top of* an existing fit rather
+    than replacing it.
+
+    The motivating case: an unweighted multi-point tank fit spanning 0-57 ppm is pinned by
+    its high-concentration points, so it can carry a substantial constant offset down at
+    ambient (~2 ppm) without that costing the fit anything. The offset is a baseline
+    property, not a span property, so correcting it does not require refitting the slope.
+
+    Quantiles are equivariant under an increasing affine map, so the shift is exact for
+    any `q`, not just the median.
+
+    Parameters
+    ----------
+    coef : dict
+        An existing fit (`fit_species` / `fit_reference_cal` shape) with at least
+        'slope' and 'intercept'. Not modified; a new dict is returned.
+    ref_values, target_values : array-like
+        Matched ambient values -- e.g. `pair_series_nearest` output's 'ref'/'target'
+        columns. `ref_values` must already be in corrected/true units (the reference
+        instrument's own calibration applied); `target_values` are the target's RAW
+        readings, in the units `apply_linear` expects. Pair them first: unpaired
+        quantiles silently compare different sampling periods.
+    q : float
+        Quantile to anchor on (0.5 = median). The median is robust to plumes, which a
+        mean is not.
+    scale_in : float, optional
+        Overrides `coef['scale_in']` (default 1.0) for the target's unit conversion.
+
+    Returns
+    -------
+    dict
+        Copy of `coef` with a new 'intercept', plus 'intercept_prior' (what it was),
+        'z_ref' / 'z_tgt' (the two anchor quantiles), 'anchor_q', and 'n_anchor'.
+        Returns `coef` unchanged if there are no finite matched pairs.
+
+    Raises
+    ------
+    ValueError
+        If `slope` is not positive -- the quantile identity below assumes an increasing
+        map, and a non-positive slope would silently invert it.
+    """
+    slope = float(coef['slope'])
+    if not slope > 0:
+        raise ValueError(f'reanchor_intercept requires a positive slope, got {slope}')
+    scale = float(coef.get('scale_in', 1.0) if scale_in is None else scale_in)
+    r = np.asarray(ref_values, dtype=float)
+    t = np.asarray(target_values, dtype=float) * scale
+    m = np.isfinite(r) & np.isfinite(t)
+    if not m.any():
+        return coef
+    z_ref, z_tgt = float(np.quantile(r[m], q)), float(np.quantile(t[m], q))
+    out = dict(coef)
+    out.update({'intercept_prior': float(coef['intercept']),
+                'intercept': z_tgt - slope * z_ref,
+                'z_ref': z_ref, 'z_tgt': z_tgt,
+                'anchor_q': float(q), 'n_anchor': int(m.sum())})
+    return out
 
 
 def fit_reference_cal(ref_values, target_values, anchor='ols', z_ref=None, z_tgt=None):

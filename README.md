@@ -248,7 +248,7 @@ them to the code path so an edited lock without a matching code change fails lou
 
 | species | method | why |
 |---|---|---|
-| `CH4` | `tank` | Both candidates viable. Tank wins at the certified ladder points, and this is a plume-detection campaign — accuracy at plume concentrations matters more than the cross-cal's tighter ambient agreement. Tank is also directly traceable to the certified standards. |
+| `CH4` | `tank` (span) | Both candidates viable. Tank wins at the certified ladder points, and this is a plume-detection campaign — accuracy at plume concentrations matters more than the cross-cal's tighter ambient agreement. Tank is also directly traceable to the certified standards. **Ultra460 and Ultra321 additionally have their baseline re-anchored** — see `CAL_BASELINE_ANCHOR` below. That moves the offset only; the span stays this tank fit. |
 | `C3H8` | `tank` | Forced — only Ultra321 measures C3H8, so no reference partner exists. |
 | `C2H6` | `reference` | Forced — the tank has one certified point (NOAA, 1.63 ppb), far below the ambient/plume range. Ultra460 stands in as reference. |
 
@@ -265,6 +265,42 @@ of a `caveat` field is the machine-readable "do not use this unqualified" flag.
 | caveated | reason |
 |---|---|
 | `('C2H6', 'Ultra321')` | **Retained for diagnostic use, not as a quantitative C2H6 measurement.** C3H8 spectral cross-talk: its span fit is far looser than Pico017's and the fit residual correlates strongly and positively with C3H8 at the matched peaks — no anchor choice fixes a spectral interference. The ambient-median anchor makes the *baseline* match Ultra460 by construction, so the baseline looks right while individual peak magnitudes are not reliable. Dropped 2026-08-26; **reinstated 2026-08-27** because characterising when a C2H6 retrieval degrades in the presence of propane/methane is a downstream deliverable that needs the calibrated column. Its CH4 and C3H8 corrections are unaffected. |
+
+**`CAL_BASELINE_ANCHOR`** — a third disposition, same `(gas, instrument)` key shape. The
+listed corrections keep their tank-fitted **slope exactly** — the span stays traceable to the
+certified ladder — while only the **intercept** is shifted, so the ambient baseline matches
+co-located, tank-corrected Picarro at the median (`cal.reanchor_intercept`).
+
+| re-anchored | why |
+|---|---|
+| `('CH4', 'Ultra460')` | Tank span retained; baseline matched to co-located Picarro. |
+| `('CH4', 'Ultra321')` | Tank span retained; baseline matched to co-located Picarro. |
+
+The tank fit is an unweighted OLS across 0–57 ppm, so it is pinned by its high-concentration
+points; ambient sits at ~2 ppm, the bottom 3.5% of that range, where a constant offset costs
+the fit almost nothing. Measured against Picarro, **85–98% of each instrument's ambient
+mean-square error is that offset**, and the residual *scatter* is identical with or without
+the adjustment. So this moves the zero and changes nothing else — and **ΔCH4 is unaffected
+entirely**, because a constant cancels in any enhancement-above-background analysis.
+
+**Residual per-day offsets remain, and are an open item.** A single campaign-wide anchor
+cannot zero every day: after re-anchoring, the median offset vs Picarro still runs −0.057 to
++0.011 ppm for Ultra460 and +0.096 to −0.018 ppm for Ultra321 across the nine WYO dates, with
+Ultra321's drifting monotonically from Feb 3 to Feb 12. Feb 7–12 sit at ±0.01–0.02 ppm; Feb
+3/5/6 are noticeably worse. **The campaign-aggregate figures average this away — do not read
+them as per-day accuracy.** Within any window the residual *scatter* is only 0.017–0.033 ppm,
+so the traces are parallel and differ in offset alone; span and timing are not implicated, and
+ΔCH4 is unaffected. Per-WYO-day anchoring would remove it but needs a per-date coefficient
+structure the output format does not currently have, and a fallback for MML days that have no
+Picarro. Deferred — see Section H of `04_calibration.ipynb` for the full table and options.
+
+**`Pico017` is deliberately excluded** and keeps the plain tank fit, so it retains a roughly
++0.28 ppm ambient offset against Picarro by design. Pico017 is co-located with Picarro only on
+the 8 WYO days, while ~18% of its rows come from MML sessions spanning January to March — and
+across those, its CH4 baseline relative to Ultra321 moves by 0.63 ppm (see *Known issues*). A
+one-week anchor cannot be extrapolated across that, and the drift is larger than anything the
+anchor would fix. **Comparing absolute ambient CH4 between Pico017 and the two Ultras therefore
+requires accounting for this deliberate asymmetry.**
 
 Live fit statistics are deliberately not quoted here — read them from
 `calibration_coefs.json`'s own `r2` fields and `04_calibration_qc.ipynb` §E, which are
@@ -420,9 +456,18 @@ These are properties of the delivered dataset. Read before treating any column a
   record in `calibration_coefs.json` carries a `caveat` field: C3H8 cross-talk makes its peak
   magnitudes unreliable. It is shipped so the failure can be characterised downstream — not as
   a measurement. See `CAL_CAVEATS` above.
-- **MML-date calibration is an extrapolation.** All three tank events fell inside the WYO
-  window (Feb 3–12); Feb-12 coefficients are applied to the January and March MML dates with
-  no direct tank evidence there.
+- **MML-date calibration is an extrapolation — and there is positive evidence of drift.**
+  All three tank events fell inside the WYO window (Feb 3–12), so Feb-12 coefficients reach
+  the January and March MML dates with no direct tank evidence. It is worse than merely
+  unvalidated: Pico017 and Ultra321 are co-located on **every** MML date, and their
+  tank-corrected ambient CH4 difference moves **0.63 ppm across the campaign** — +0.895
+  (Jan 20), +0.540 (Jan 22), +0.280 (Feb 4), +0.264 (Mar 10) — against a spread of only
+  0.09 ppm inside the WYO window. At least one of the two drifted substantially, and with
+  only those two instruments co-located there and no third reference (UOU_LGR exists on
+  Mar 10 alone), **this dataset cannot say which.** MML sessions are ~18% of each LANL
+  instrument's rows (Pico017 133,150 of 742,599; Ultra321 130,932 of 781,924).
+  Characterising or correcting that drift is analysis work, not ETL — it is deliberately
+  not attempted here.
 - **Method locks are a point-in-time decision.** Re-run `04_calibration_qc.ipynb` if new tank
   or ambient data should prompt revisiting one.
 
@@ -456,7 +501,8 @@ instrument keys match across all three.
 
 Note that a `gases` entry lists what an instrument physically **measures**, which is not the
 same as what has a calibrated `*_cal` column (see `CAL_DROPPED`), nor the same as what is safe
-to use unqualified (see `CAL_CAVEATS`).
+to use unqualified (see `CAL_CAVEATS`), nor the same as what shares a common baseline across
+instruments (see `CAL_BASELINE_ANCHOR`).
 
 ### `archive_legacy_analysis/`
 
