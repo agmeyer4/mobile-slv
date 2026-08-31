@@ -134,7 +134,7 @@ problem before the manual part is worth hours.
 | Stage | Check | Passing looks like |
 |---|---|---|
 | **01** | Manifest totals; backstep counts; `ts_source` on every corrected file | Row counts preserved per file, zero duplicates introduced, backsteps collapse toward zero |
-| **02** | `check_timestamps --stage 02`; per-group `ts_source`; reconcile counts against 01 | 0 unsorted, 0 backsteps; Raw and Eng breakdowns identical per instrument; only known duplicate sources flagged |
+| **02** | `check_timestamps --stage 02`; per-group `ts_source`; reconcile counts against 01; **`WYO_sprinter` no-fix masking** | 0 unsorted, 0 backsteps; Raw and Eng breakdowns identical per instrument; only known duplicate sources flagged; 15 rows with `GPS Quality == 0` have NaN `lat_deg`/`lon_deg` and **no exact-zero coordinate survives** |
 | **03** | **Read `lag_offsets_*.json` directly.** One entry per non-rejected session | `warn: 0` in the apply manifest *and* a fully populated lag dict |
 | **04** | Read a calibrated column back off disk against `(raw * scale_in - intercept) / slope`; confirm dropped corrections absent and caveated ones carry their `caveat` field | Max abs difference `0.0`; correction count matches the locks; no `MISMATCH` in Section H |
 | **all** | `git_dirty` and the `upstream` chain in every manifest | `false` everywhere; each stage points at the run that actually fed it |

@@ -381,13 +381,32 @@ These are properties of the delivered dataset. Read before treating any column a
 - **The host clock is a serial *receipt* time**, and the Toughbook is not NTP-synced. Stage 01
   trades a systematic ±2 s ramp for roughly 0.4 s zero-mean noise. Absolute accuracy still
   rides on Stage 03's GPS correction.
+- **`WYO_sprinter` stalls: 69 minutes of missing position, and gaps up to 3 minutes long.**
+  The Sprinter's GPS is the position source for *every* WYO-platform gas measurement, so this
+  is the limiting factor on any spatial join. 35 gaps longer than 30 s total 68.9 min (median
+  124 s, max 185 s); coverage is 98.8% of the wall span (336,909 rows against 340,934 expected
+  at 1 Hz). **In 15 of the 35 gaps the van moved more than 100 m.** A `merge_asof` onto sprinter
+  position **without a `tolerance` argument will silently carry a stale fix forward across up
+  to ~3 minutes of driving** — always pass one.
+- **`WYO_sprinter` nulls its coordinates on 15 no-fix rows.** Rows where `GPS Quality == 0`
+  (the NMEA invalid-fix code) are logged with `lat_deg`/`lon_deg` of exactly `0.0` — a real
+  coordinate in the Gulf of Guinea. Stage 02's reader masks those two columns to NaN, matching
+  what the logger already does to `altitude_m`; met channels (`temp_C`, `RH_pct`,
+  `pressure_bar`) come off separate sensors and are left valid. Fix quality over the campaign
+  is `2` (DGPS) 303,429 rows / `1` (SPS) 33,465 / `0` (invalid) 15. Filter on `GPS Quality` if
+  you need DGPS precision specifically.
 - **`WYO_sprinter` has 72 duplicate timestamps** across 336,909 rows (0.02%), in 15 of 17
-  files. The sprinter logs at ~10 Hz but its `UTC hhmmss` field has 0.1 s resolution, so
-  collisions are expected. There are **zero exact-duplicate rows** — colliding rows carry
-  genuinely different readings, so de-duplicating would discard real data. Left as-is
-  deliberately. `merge_asof` tolerates duplicate keys, but `.loc[ts]` returns a frame instead
-  of a row and `reindex` raises. `load_aligned_series` drops dupes (`keep='first'`) for
-  in-repo use.
+  files — forming 42 collision groups of 2–3 rows. These are a **logger-stall artifact, not a
+  timestamp-resolution one**: the instrument runs at 1 Hz (median `dt` 1.00 s), and 34 of the
+  41 groups are immediately followed by one of the >30 s gaps above — the clock freezes, two
+  or three rows land on the frozen stamp, then data stops. What differs inside a group is
+  almost entirely derived wind and heading noise (`gps_wind_dir_true` 40/42 groups,
+  `wind_dir_true` 37/42, `heading_deg` 21/42), typically on a stationary van where wind
+  direction is meaningless. **Position is bit-identical in 28 of the 42 groups**; the 14 that
+  differ do so by 1e-6–9e-6° (~0.1–1 m), worst case ~10 m. Dropping duplicates therefore costs
+  nothing that matters — `load_aligned_series` uses `keep='first'` for in-repo use, and
+  downstream code should do the same. (`merge_asof` tolerates duplicate keys, but `.loc[ts]`
+  returns a frame instead of a row and `reindex` raises.)
 - **C2H6 is not traceable to a certified zero.** Pico017's baseline is anchored to match
   Ultra460's own ambient median, not the tank's absolute zero (the two genuinely disagree at
   baseline). This makes C2H6_cal cross-instrument-consistent but **not** an absolute

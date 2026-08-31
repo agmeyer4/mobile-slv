@@ -11,7 +11,7 @@ Readers:
   read_aeris_raw(path, rename)        — Aeris Raw and Eng .txt files (1-line header + CSV)
   read_picarro(path)                  — Picarro .dat files
   read_lgr(path)                      — LGR final .dat files
-  read_sprinter(path)                 — Sprinter .csv files
+  read_sprinter(path)                 — Sprinter .csv files; nulls lat/lon on no-fix rows
   read_spectra(spectra_path, raw_dir) — headerless Aeris Spectra/Spectralite .txt files;
                                         recovers ts_source from the paired Raw file
   read_gps(path)                      — toughbook GPS .dat files (NMEA-encoded);
@@ -316,7 +316,17 @@ def make_spectra_reader(raw_dir):
 
 
 def read_sprinter(path) -> pd.DataFrame | None:
-    """Sprinter CSV (3 junk rows, then header, then data)."""
+    """
+    Sprinter CSV (3 junk rows, then header, then data).
+
+    Rows with no GPS fix (`GPS Quality == 0`, the NMEA invalid-fix code) are written by
+    the logger with `lat_deg`/`lon_deg` of exactly 0.0 rather than a null, which is a real
+    coordinate in the Gulf of Guinea — a spatial join would silently place those samples
+    11,000 km away. They are masked to NaN here. The logger already nulls `altitude_m` on
+    those rows, so this only makes latitude and longitude behave the way altitude already
+    does. Met channels (`temp_C`, `RH_pct`, `pressure_bar`) stay untouched — they come off
+    separate sensors and are still valid without a fix.
+    """
     _SKIP = 3
     with open(path) as fh:
         for _ in range(_SKIP):
@@ -329,6 +339,9 @@ def read_sprinter(path) -> pd.DataFrame | None:
     df = df.iloc[:, :len(col_names)].copy()
     df.columns = col_names
     result = _finalize(df, _sprinter_ts(df), SPRINTER_RENAME)
+    if "GPS Quality" in result.columns:
+        no_fix = pd.to_numeric(result["GPS Quality"], errors="coerce") == 0
+        result.loc[no_fix, ["lat_deg", "lon_deg"]] = pd.NA
     return result if not result.empty else None
 
 
