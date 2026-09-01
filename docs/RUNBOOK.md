@@ -190,9 +190,9 @@ mv "$D/01_utc_corrected" "$D/02_standardized" \
 # file, and Stage 04 mkdirs STAGE_04_DIR. The mkdirs below exist ONLY to give the
 # restores a destination, so each one is paired with the copy it enables.
 
-# ALWAYS restore: past freeze records. Not pipeline state, and often the only copies.
-mkdir -p "$D/04_calibrated"
-cp -a "$A/04_calibrated"/*.html "$D/04_calibrated/"
+# Nothing is restored here in mode A. Past releases' HTML is NOT copied forward: it
+# documents the data now sitting in "$A", not the run about to happen, and its durable
+# home is $D/frozen_records/<tag>/ (phase 5), which archive pruning never touches.
 
 # Mode B ONLY (see below) — uncomment the mkdir together with the copies.
 # mkdir -p "$D/03_instrument_aligned"
@@ -201,8 +201,15 @@ cp -a "$A/04_calibrated"/*.html "$D/04_calibrated/"
 # cp -a "$A/03_instrument_aligned/lag_offsets_mml.json"  "$D/03_instrument_aligned/"
 ```
 
-In mode A, `03_instrument_aligned/` should simply **not exist** after this step — that absence
-is the cheapest confirmation you are in mode A and restored nothing by reflex.
+In mode A **neither** `03_instrument_aligned/` nor `04_calibrated/` should exist after this
+step — the stages create them. That absence is the cheapest confirmation you are in mode A and
+restored nothing by reflex.
+
+> **Why past HTML is not carried forward.** Earlier revisions of this runbook copied
+> `04_calibrated/*.html` into each new stage directory to avoid losing it. That produced a
+> record sitting next to data it did not produce — contradicting the *HTML next to the data it
+> produced* convention — and a fresh duplicate on every freeze. The durable copy belongs in
+> `frozen_records/<tag>/` instead; see phase 5.
 
 ### Two modes — decide before running, they restore different things
 
@@ -281,7 +288,20 @@ jupyter nbconvert --to html --output <stage>_<date> \
 
 git tag -a v<N>.0-etl-freeze -m "..."
 git push origin v<N>.0-etl-freeze
+
+# durable copy of the release record, outside the stage dirs
+D=/uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026
+mkdir -p "$D/frozen_records/v<N>.0-etl-freeze"
+cp -a "$D"/0*/[0-9]*_*.html "$D/frozen_records/v<N>.0-etl-freeze/"
+cp -a "$D"/04_calibrated/calibration_coefs.json \
+      "$D/frozen_records/v<N>.0-etl-freeze/"
 ```
+
+**Two copies, deliberately, with different jobs.** The copy in the stage directory is the
+working record and is expected to die with that data when the tree is next archived. The copy
+in `frozen_records/<tag>/` is the release record: it is the only one that survives phase 6's
+archive pruning, so it is what makes a tag still mean something years later. `frozen_records/`
+is never pruned and never restored into a stage directory.
 
 A complete freeze exports **six**: `01_utc_correction`, `03_survey`, `03a_align_wyo`,
 `03b_align_mml`, `04_calibration`, and `04_calibration_qc` — the survey and the QC notebook
@@ -305,7 +325,10 @@ full_html=False)`, then grep the result for `plotly-graph-div` — don't trust a
   output directory; its README cites that path. This is the one item living outside this repo
   and the easiest to forget — a freeze fails quietly when a consumer still points at the
   previous release.
-- Drop archives that are superseded twice over, once the new run is verified.
+- Drop archives that are superseded twice over, once the new run is verified. **Check
+  `frozen_records/<tag>/` holds this release's HTML first** — after pruning, the stage-dir
+  copies inside those archives are gone, and that directory is the only remaining record of
+  what the run looked like.
 
 ---
 
