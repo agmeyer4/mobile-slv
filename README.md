@@ -107,12 +107,30 @@ raw/  (read-only)
  └─► 01_utc_corrected/          Stage 01 — Aeris timestamps rebuilt from the logger host clock
       └─► 02_standardized/      Stage 02 — uniform UTC TIMESTAMP index, clean columns, Parquet
            └─► 03_instrument_aligned/   Stage 03 — cross-correlation / spike lag offsets applied
-                └─► 04_calibrated/      Stage 04 — gas calibration applied (*_cal columns)
+                └─► 04_calibrated/      Stage 04 — gas corrections applied (*_cal / *_xcal)
 ```
 
-`04_calibrated/` is a **complete mirror** of Stage 03's breadth — calibrated gas files plus
+`04_calibrated/` is a **complete mirror** of Stage 03's breadth — corrected gas files plus
 straight pass-through of everything calibration doesn't touch (spectra, GPS, anemometer,
 sprinter, LGR), so downstream analysis can read everything from one directory.
+
+### What a corrected column means
+
+Stage 04 emits **two suffixes**, and the difference between them is the whole point of the
+stage. This is the product contract; it is also written into `calibration_coefs.json` under
+`metadata.column_contract`, so a downstream reader never has to come back here.
+
+| suffix | gases | `traceability` field | meaning |
+|---|---|---|---|
+| `*_cal` | CH4 (4 instruments), C3H8 (Ultra321) | `certified_tank_ladder` | **Traceable.** Derived against the certified tank/dilution ladder and nothing else. A value here is a measurement referred to a certified standard. |
+| `*_xcal` | C2H6 (3 instruments) | `none_cross_instrument_transfer` | **Transferred.** Harmonized to Ultra460 because no certified anchor spans the needed range. Internally consistent across instruments; **not traceable, not absolute.** Ultra460 carries the identity transform so all three sit on the same footing. |
+
+Anything that would need a **campaign-specific modelling choice** on top of these — the CH4
+baseline anchor, drift correction, interference deconvolution — is **computed and recorded but
+not applied**, written with `"applied": false` in the coefficients file. That work is analysis
+and lives downstream in `mobile-hydrocarbon-analysis`. Holding that line is what keeps Stage 04
+an ETL stage rather than half a study, and it means the sentence describing the product is one
+sentence long.
 
 ### Instrument sources
 
@@ -248,7 +266,7 @@ them to the code path so an edited lock without a matching code change fails lou
 
 | species | method | why |
 |---|---|---|
-| `CH4` | `tank` (span) | Both candidates viable. Tank wins at the certified ladder points, and this is a plume-detection campaign — accuracy at plume concentrations matters more than the cross-cal's tighter ambient agreement. Tank is also directly traceable to the certified standards. **Ultra460 and Ultra321 additionally have their baseline re-anchored** — see `CAL_BASELINE_ANCHOR` below. That moves the offset only; the span stays this tank fit. |
+| `CH4` | `tank` (span) | Both candidates viable. Tank wins at the certified ladder points, and this is a plume-detection campaign — accuracy at plume concentrations matters more than the cross-cal's tighter ambient agreement. Tank is also directly traceable to the certified standards. All four instruments ship the **plain tank fit**; the baseline anchor described under `CAL_BASELINE_ANCHOR` below is recorded but **not applied**. |
 | `C3H8` | `tank` | Forced — only Ultra321 measures C3H8, so no reference partner exists. |
 | `C2H6` | `reference` | Forced — the tank has one certified point (NOAA, 1.63 ppb), far below the ambient/plume range. Ultra460 stands in as reference. |
 
@@ -266,41 +284,64 @@ of a `caveat` field is the machine-readable "do not use this unqualified" flag.
 |---|---|
 | `('C2H6', 'Ultra321')` | **Retained for diagnostic use, not as a quantitative C2H6 measurement.** C3H8 spectral cross-talk: its span fit is far looser than Pico017's and the fit residual correlates strongly and positively with C3H8 at the matched peaks — no anchor choice fixes a spectral interference. The ambient-median anchor makes the *baseline* match Ultra460 by construction, so the baseline looks right while individual peak magnitudes are not reliable. Dropped 2026-08-26; **reinstated 2026-08-27** because characterising when a C2H6 retrieval degrades in the presence of propane/methane is a downstream deliverable that needs the calibrated column. Its CH4 and C3H8 corrections are unaffected. |
 
-**`CAL_BASELINE_ANCHOR`** — a third disposition, same `(gas, instrument)` key shape. The
-listed corrections keep their tank-fitted **slope exactly** — the span stays traceable to the
-certified ladder — while only the **intercept** is shifted, so the ambient baseline matches
+**`CAL_BASELINE_ANCHOR`** — a third disposition, same `(gas, instrument)` key shape:
+corrections for which an **alternative intercept is computed and recorded, but deliberately
+not applied** (`CAL_BASELINE_ANCHOR_APPLY = False`). The alternative keeps the tank-fitted
+**slope bit-for-bit** and moves only the **intercept**, so the ambient baseline would match
 co-located, tank-corrected Picarro at the median (`cal.reanchor_intercept`).
 
-| re-anchored | why |
+| anchor computed for | disposition |
 |---|---|
-| `('CH4', 'Ultra460')` | Tank span retained; baseline matched to co-located Picarro. |
-| `('CH4', 'Ultra321')` | Tank span retained; baseline matched to co-located Picarro. |
+| `('CH4', 'Ultra460')` | Recorded, `"applied": false`. Tank intercept `+0.2797`; `intercept_if_applied` `+0.4049`. |
+| `('CH4', 'Ultra321')` | Recorded, `"applied": false`. Tank intercept `+0.2340`; `intercept_if_applied` `+0.1193`. |
 
-The tank fit is an unweighted OLS across 0–57 ppm, so it is pinned by its high-concentration
-points; ambient sits at ~2 ppm, the bottom 3.5% of that range, where a constant offset costs
-the fit almost nothing. Measured against Picarro, **85–98% of each instrument's ambient
-mean-square error is that offset**, and the residual *scatter* is identical with or without
-the adjustment. So this moves the zero and changes nothing else — and **ΔCH4 is unaffected
-entirely**, because a constant cancels in any enhancement-above-background analysis.
+**Why it is recorded rather than applied.** `*_cal` means *traceable to the certified ladder*.
+This offset is a harmonization to another **instrument** — a different kind of claim — so
+folding it into the same column is precisely the blend of calibration and analysis that Stage
+04 exists to avoid. Withholding it costs nothing, because it is a pure constant:
 
-**Residual per-day offsets remain, and are an open item.** A single campaign-wide anchor
-cannot zero every day: after re-anchoring, the median offset vs Picarro still runs −0.057 to
-+0.011 ppm for Ultra460 and +0.096 to −0.018 ppm for Ultra321 across the nine WYO dates, with
-Ultra321's drifting monotonically from Feb 3 to Feb 12. Feb 7–12 sit at ±0.01–0.02 ppm; Feb
-3/5/6 are noticeably worse. **The campaign-aggregate figures average this away — do not read
-them as per-day accuracy.** Within any window the residual *scatter* is only 0.017–0.033 ppm,
-so the traces are parallel and differ in offset alone; span and timing are not implicated, and
-ΔCH4 is unaffected. Per-WYO-day anchoring would remove it but needs a per-date coefficient
-structure the output format does not currently have, and a fallback for MML days that have no
-Picarro. Deferred — see Section H of `04_calibration.ipynb` for the full table and options.
+```python
+# recover the anchored value downstream, exactly, from calibration_coefs.json
+anchored = (raw - rec['baseline_anchor']['intercept_if_applied']) / rec['slope']
+```
 
-**`Pico017` is deliberately excluded** and keeps the plain tank fit, so it retains a roughly
-+0.28 ppm ambient offset against Picarro by design. Pico017 is co-located with Picarro only on
-the 8 WYO days, while ~18% of its rows come from MML sessions spanning January to March — and
-across those, its CH4 baseline relative to Ultra321 moves by 0.63 ppm (see *Known issues*). A
-one-week anchor cannot be extrapolated across that, and the drift is larger than anything the
-anchor would fix. **Comparing absolute ambient CH4 between Pico017 and the two Ultras therefore
-requires accounting for this deliberate asymmetry.**
+That reproduces the previously-shipped anchored column **bit-for-bit** (verified: max
+absolute difference 0.0), and **ΔCH4 is identical either way** since a constant cancels in any
+enhancement-above-background analysis. Setting `CAL_BASELINE_ANCHOR_APPLY = True` restores the
+old behaviour if a future release wants it.
+
+A welcome side effect: with nothing anchored, **all four CH4 instruments get identical
+treatment**, so the old "Pico017 is the odd one out" asymmetry is gone from the shipped
+product.
+
+*Where the offset comes from:* the tank fit is an unweighted OLS across 0–57 ppm, so it is
+pinned by its high-concentration points; ambient sits at ~2 ppm, the bottom 3.5% of that range,
+where a constant offset costs the fit almost nothing. Measured against Picarro, **85–98% of
+each instrument's ambient mean-square error is that offset**, and the residual *scatter* is
+identical with or without the adjustment.
+
+**Why a campaign-wide anchor was not good enough to apply.** It cannot zero every day. If
+applied, the median offset vs Picarro would still run −0.057 to +0.011 ppm for Ultra460 and
++0.096 to −0.018 ppm for Ultra321 across the nine WYO dates, with Ultra321's drifting
+monotonically from Feb 3 to Feb 12; Feb 7–12 sit at ±0.01–0.02 ppm while Feb 3/5/6 are
+noticeably worse. **The campaign-aggregate figures average this away — do not read them as
+per-day accuracy.** So the adjustment trades a clean traceability claim for uneven,
+hard-to-describe agreement. Per-WYO-day anchoring would fix it properly, but needs a per-date
+coefficient structure the output format does not have and a fallback for MML days that have no
+Picarro — post-analysis work either way. See Section H of `04_calibration.ipynb` for the full
+per-day table.
+
+Reassuringly, within any window the residual *scatter* is only **0.017–0.033 ppm**: the traces
+are parallel and differ in offset alone, so span and timing are not implicated.
+
+**What this means for absolute comparisons.** Because no instrument is anchored, absolute
+ambient CH4 differs between instruments by a constant: roughly 0.12–0.13 ppm for Ultra460 and
+Ultra321, and roughly **+0.28 ppm for Pico017** against Picarro. Pico017 could not have been
+anchored in any case — it is co-located with Picarro only on the 8 WYO days, while ~18% of its
+rows come from MML sessions spanning January to March, across which its CH4 baseline relative
+to Ultra321 moves by 0.63 ppm (see *Known issues*). **Downstream work comparing absolute
+ambient CH4 across instruments must account for these offsets; ΔCH4 is unaffected by any of
+them.**
 
 Live fit statistics are deliberately not quoted here — read them from
 `calibration_coefs.json`'s own `r2` fields and `04_calibration_qc.ipynb` §E, which are
@@ -311,7 +352,8 @@ pattern that would motivate a low/high split appears identically in Picarro, so 
 dilution-manifold imprecision, not instrument nonlinearity). Canonical date is **Feb 12**, the
 only event spanning the full 0–57 ppm range; Feb 3 and Feb 6 are computed as drift QC only.
 
-Apply formula: `calibrated = (measured * scale_in - intercept) / slope`
+Apply formula: `corrected = (measured * scale_in - intercept) / slope` — the same for `*_cal`
+and `*_xcal`; only the `traceability` of the coefficients differs.
 
 ---
 
@@ -351,14 +393,21 @@ Apply formula: `calibrated = (measured * scale_in - intercept) / slope`
 
 ```
 04_calibrated/
-├── {instrument}/{Raw,Eng}/     ← *_cal columns + cal_coefs_ref column
+├── {instrument}/{Raw,Eng}/     ← *_cal / *_xcal columns + cal_coefs_ref column
 ├── {spectra}/ {GPS} {Anem} {sprinter} {LGR}   ← pass-through, NO cal_coefs_ref
-├── calibration_coefs.json      ← per-correction coefficients + method/confidence tags
+├── calibration_coefs.json      ← coefficients + traceability/method/confidence tags
 ├── apply_manifest.json         ← per-instrument file/row counts
 └── passthrough_manifest.json   ← what was copied unchanged
 ```
 
-The presence of a `cal_coefs_ref` column is how to tell a calibrated file from a pass-through.
+The presence of a `cal_coefs_ref` column is how to tell a corrected file from a pass-through.
+**8 corrections ship: 5 traceable (`*_cal`) and 3 transferred (`*_xcal`).**
+
+| gas | instruments | column |
+|---|---|---|
+| CH4 | Picarro, Ultra460, Ultra321, Pico017 | `CH4_ppm_cal` |
+| C3H8 | Ultra321 | `C3H8_ppm_cal` |
+| C2H6 | Ultra460 *(identity — the reference)*, Pico017, Ultra321 | `C2H6_ppb_xcal` |
 
 ---
 
@@ -447,12 +496,15 @@ These are properties of the delivered dataset. Read before treating any column a
   nothing that matters — `load_aligned_series` uses `keep='first'` for in-repo use, and
   downstream code should do the same. (`merge_asof` tolerates duplicate keys, but `.loc[ts]`
   returns a frame instead of a row and `reindex` raises.)
-- **C2H6 is not traceable to a certified zero.** Pico017's baseline is anchored to match
-  Ultra460's own ambient median, not the tank's absolute zero (the two genuinely disagree at
-  baseline). This makes C2H6_cal cross-instrument-consistent but **not** an absolute
-  measurement. The whole C2H6 calibration also rests on Ultra460's C2H6 being correct, which
-  is assumed, not independently validated.
-- **Ultra321's calibrated C2H6 is diagnostic only.** It has a `C2H6_ppb_cal` column, but its
+- **C2H6 is not traceable to a certified zero — which is why it ships as `*_xcal`.** Pico017's
+  and Ultra321's baselines are anchored to match Ultra460's own ambient median, not the tank's
+  absolute zero (the two genuinely disagree at baseline). This makes `C2H6_ppb_xcal`
+  cross-instrument-consistent but **not** an absolute measurement, and the whole thing rests on
+  Ultra460's C2H6 being correct, which is assumed, not independently validated. Ultra460 is
+  emitted with the identity transform so all three instruments carry the same column rather
+  than the product being "one instrument raw, two transformed to match it" — but that
+  uniformity is presentational honesty, not evidence that any of the three is absolute.
+- **Ultra321's C2H6 is diagnostic only.** It has a `C2H6_ppb_xcal` column, but its
   record in `calibration_coefs.json` carries a `caveat` field: C3H8 cross-talk makes its peak
   magnitudes unreliable. It is shipped so the failure can be characterised downstream — not as
   a measurement. See `CAL_CAVEATS` above.
@@ -500,9 +552,9 @@ by the pipeline itself — `paths.py` and `src/readers.py::INSTRUMENT_TASKS` dri
 instrument keys match across all three.
 
 Note that a `gases` entry lists what an instrument physically **measures**, which is not the
-same as what has a calibrated `*_cal` column (see `CAL_DROPPED`), nor the same as what is safe
-to use unqualified (see `CAL_CAVEATS`), nor the same as what shares a common baseline across
-instruments (see `CAL_BASELINE_ANCHOR`).
+same as what has a traceable `*_cal` column rather than a transferred `*_xcal` one (see *What a
+corrected column means*), nor the same as what is emitted at all (see `CAL_DROPPED`), nor the
+same as what is safe to use unqualified (see `CAL_CAVEATS`).
 
 ### `archive_legacy_analysis/`
 

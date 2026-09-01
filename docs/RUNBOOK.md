@@ -302,7 +302,7 @@ produced the alignment underneath it.
 **Why re-running Stage 04 in place is safe here but not in general.**
 `cal.apply_calibration_to_dir` rebuilds every output file from its Stage 03 source, so
 columns are rebuilt rather than accumulated — a correction you remove really does lose its
-`*_cal` column. What it does *not* do is delete destination files that no longer have a
+`*_cal` / `*_xcal` column. What it does *not* do is delete destination files that no longer have a
 source. With Stage 03 unchanged the file set is identical and no orphan is possible; if Stage
 03 *had* changed, an in-place re-run could leave stale files behind, which is the whole reason
 Part II phase 3 archives the tree instead of overwriting it. Section H's file-count
