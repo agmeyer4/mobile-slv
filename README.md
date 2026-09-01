@@ -1,10 +1,29 @@
 # mobile-slv
 
-## **⚠️ STATUS: FROZEN / ETL ONLY ⚠️**
+## STATUS: v2 pipeline — ETL + QA/QC (incl. calibration)
 
-This repository is frozen as the **Data Engineering / ETL pipeline** for the Salt Lake Valley Winter Mobile Campaign 2026 (Jan 15 – Mar 10). It handles raw data extraction, timestamp correction, cleaning, and lag verification — **nothing else**.
+Supersedes [`v1.0-etl-freeze`](https://github.com/agmeyer4/mobile-slv/releases/tag/v1.0-etl-freeze),
+which froze at `recleaned/` and explicitly excluded calibration. **v2 rebuilds the pipeline as
+four numbered stages and brings calibration in as Stage 04.**
 
-**The final ETL output is `recleaned/`.** Daily merging, calibration, and all scientific analysis have moved to [`mobile-hydrocarbon-analysis`](https://github.com/agmeyer4/mobile-hydrocarbon-analysis), which reads directly from `recleaned/`. Do not add analysis or merge code here.
+**Scope rule:** this repo holds *deterministic, reproducible-from-a-log* data preparation —
+determine a correction from a known reference (logger clock, cross-correlation lag, tank
+manifest), save it, apply it once. Open-ended scientific interpretation, exploratory
+comparison, and spectra inspection belong in
+[`mobile-hydrocarbon-analysis`](https://github.com/agmeyer4/mobile-hydrocarbon-analysis).
+Calibration qualifies under that rule; it is not an exception to it. Before extending scope
+further, apply the same test — deterministic-from-a-log, or open-ended?
+
+**The final ETL output is `04_calibrated/`**, which downstream analysis reads directly. It is a
+complete mirror of Stage 03's breadth (calibrated gas files plus untouched pass-through of
+spectra, GPS, anemometer, sprinter, and LGR), so analysis needs only that one directory.
+
+---
+
+ETL and QA/QC pipeline for the **Salt Lake Valley Winter Mobile Campaign 2026** (Jan 15 – Mar 10).
+Takes raw instrument files through clock correction, standardization, cross-instrument time
+alignment, and gas calibration, producing an analysis-ready Parquet dataset with full
+provenance back to the raw data and the exact commit that produced it.
 
 ---
 
@@ -16,106 +35,528 @@ conda activate mobile-slv
 nbstripout --install                  # strip notebook outputs on git add (run once per clone)
 ```
 
-## Data Lineage
+`environment.lock.yml` holds exact resolved versions for reproducing a canonical run.
+`environment.yml` is the human-edited statement of intent — regenerate the lock with
+`conda env export -n mobile-slv --no-builds` after deliberately changing a dependency.
 
-All data lives outside this repo on CHPC. Raw files are read-only; each ETL step writes to its own directory. `recleaned/` is the handoff point for `mobile-hydrocarbon-analysis`.
+> **Notebook execution requires the `mobile-slv` environment's Python.** A system Python
+> without `pyarrow` will report every Parquet file as unreadable.
 
-**All `TIMESTAMP` values throughout this pipeline are UTC.** They are stored as timezone-naive strings (ISO 8601, no offset suffix); there is no daylight saving ambiguity. Interpret every `TIMESTAMP` value as UTC.
+---
 
-For full instrument descriptions, deployment schedule, and file format details, see [`raw/README.md`](../lin-group24/agm/Mobile_SLV/Data/2026/raw/README.md) — that is the authoritative source for the raw data.
+## Running the full pipeline
+
+Stages must run in order. Only Stage 02 is fully unattended.
+
+```bash
+# Stage 01 — Aeris clock correction (notebook, Run All)
+jupyter nbconvert --execute --inplace pipeline/01_utc_correction.ipynb
+
+# Stage 02 — Standardize (unattended, tens of minutes; re-parses ~14 GB of text)
+python pipeline/02_standardize.py
+
+# Stage 03a / 03b — alignment (interactive widgets; see below before running)
+#   open in JupyterLab with the mobile-slv kernel
+
+# Stage 04 — Calibration (notebook, Run All; method locks are in the config cell)
+jupyter nbconvert --execute --inplace pipeline/04_calibration.ipynb
+
+# Gate: verify the timestamp index of every output file
+python scripts/check_timestamps.py --stage 02 03 04
+```
+
+> **Running the pipeline, or freezing a release?** [`docs/RUNBOOK.md`](docs/RUNBOOK.md) is
+> both: Part I is the operating reference for getting from `raw/` to `04_calibrated/` (what
+> each stage reads and writes, what to verify), Part II is the six-phase freeze procedure, and
+> Part III covers re-running one stage after a freeze without redoing the rest.
+
+`pipeline/03_survey.ipynb` is the manual quality survey (341 files across 7 instruments) whose
+result lives in `03_instrument_aligned/quality_manifest.yaml`. Its verdicts are calls about a
+session's quality, so they stay valid across upstream changes and are not redone in a normal
+re-run. The notebook is **resumable** — it loads the existing manifest on start and saves after
+each click, so re-running it resumes rather than resets, and running its cells without clicking
+is read-only. **Back the manifest up before anything that could clear the Stage 03 directory:**
+delete it and the notebook starts from zero, which means re-reviewing every session by hand.
+It is the only artifact in the pipeline that cannot be regenerated by running something.
+
+> ### Re-running Stage 03 without redoing the review
+> The 03a/03b widgets hold their state in notebook globals, and `save_lag_offsets_*()`
+> serialises whatever is in them. A fresh kernel running top-to-bottom with
+> `RESUME_REVIEW = False` would therefore write an **empty** manifest over a real one and
+> then apply 0 s to every file.
+>
+> **Set `RESUME_REVIEW = True`** (in the *Resume saved review state* cell) to seed the
+> globals from the saved `lag_offsets_{wyo,mml}.json`. You can then re-run the Save and
+> Apply cells to rebuild the aligned Parquet after an upstream change **without redoing any
+> human review** — the lag numbers are unchanged; only `regen_git_hash` / `regen_run_utc`
+> move.
+>
+> A genuine re-review (`RESUME_REVIEW = False`, stepping through every session) is only
+> needed when the upstream *timeline itself* changed, since every lag was cross-correlated
+> against the old one.
+
+---
+
+## Data lineage
+
+Raw files live on CHPC and are **read-only**. Each stage writes to its own output directory.
+All pipeline paths are defined in `paths.py` (repo root) — never hardcode data paths.
 
 ```
-Raw (read-only)
-/uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/raw/
-    ├── WYO_picarro/            ← trusted reference (~2s accuracy, used as UTC truth)
-    ├── WYO_sprinter/           ← trusted GPS/met
-    ├── WYO_aerisultra460/      ← usually correct timestamps, verified in Step 3
-    ├── LANL_aerisultra321/     ← WRONG internal clock — corrected in Step 1
-    ├── LANL_aerispico017/      ← WRONG internal clock — corrected in Step 1
-    ├── LANL_rpi/               ← dual-timestamp logger used to correct Ultra321/Pico017 (WYO)
-    ├── LANL_toughbook/         ← dual-timestamp logger used to correct Ultra321/Pico017 (MML)
-    └── UOU_LGR/                ← trusted timestamps
-
-Step 1 → ts_corrected/
-/uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/ts_corrected/
-    Corrects the Aeris Ultra321 and Pico017 internal clocks using the co-located
-    RPi/Toughbook logger files. Offsets are per-file (not global) and saved to
-    offsets/ts_correction_offsets.json.
-
-    Only Ultra321 and Pico017 files are actually rewritten here.
-    WYO_picarro and WYO_sprinter are symlinked directly to raw/ (no correction needed).
-    Ultra460, Toughbook, and LGR are copied as-is (trusted timestamps).
-
-Step 2 → cleaned/
-/uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/cleaned/
-    All streams standardized to uniform CSV format with a TIMESTAMP index.
-    No lag offsets applied yet — this is the input for cross-correlation in Step 3.
-
-Step 3 (no write) — cross-correlation results saved to offsets/*_lag.json
-
-Step 4 → recleaned/   ← FINAL ETL OUTPUT
-/uufs/chpc.utah.edu/common/home/lin-group24/agm/Mobile_SLV/Data/2026/recleaned/
-    Per-file lag offsets applied to cleaned/ files. One directory per instrument stream.
-    Picarro, Sprinter, and Toughbook copied unchanged (trusted timestamps).
-    This is the handoff to mobile-hydrocarbon-analysis for merging, calibration, and analysis.
+raw/  (read-only)
+ └─► 01_utc_corrected/          Stage 01 — Aeris timestamps rebuilt from the logger host clock
+      └─► 02_standardized/      Stage 02 — uniform UTC TIMESTAMP index, clean columns, Parquet
+           └─► 03_instrument_aligned/   Stage 03 — cross-correlation / spike lag offsets applied
+                └─► 04_calibrated/      Stage 04 — gas corrections applied (*_cal / *_xcal)
 ```
+
+`04_calibrated/` is a **complete mirror** of Stage 03's breadth — corrected gas files plus
+straight pass-through of everything calibration doesn't touch (spectra, GPS, anemometer,
+sprinter, LGR), so downstream analysis can read everything from one directory.
+
+### What a corrected column means
+
+Stage 04 emits **two suffixes**, and the difference between them is the whole point of the
+stage. This is the product contract; it is also written into `calibration_coefs.json` under
+`metadata.column_contract`, so a downstream reader never has to come back here.
+
+| suffix | gases | `traceability` field | meaning |
+|---|---|---|---|
+| `*_cal` | CH4 (4 instruments), C3H8 (Ultra321) | `certified_tank_ladder` | **Traceable.** Derived against the certified tank/dilution ladder and nothing else. A value here is a measurement referred to a certified standard. |
+| `*_xcal` | C2H6 (3 instruments) | `none_cross_instrument_transfer` | **Transferred.** Harmonized to Ultra460 because no certified anchor spans the needed range. Internally consistent across instruments; **not traceable, not absolute.** Ultra460 carries the identity transform so all three sit on the same footing. |
+
+Anything that would need a **campaign-specific modelling choice** on top of these — the CH4
+baseline anchor, drift correction, interference deconvolution — is **computed and recorded but
+not applied**, written with `"applied": false` in the coefficients file. That work is analysis
+and lives downstream in `mobile-hydrocarbon-analysis`. Holding that line is what keeps Stage 04
+an ETL stage rather than half a study, and it means the sentence describing the product is one
+sentence long.
+
+### Instrument sources
+
+| Instrument | Raw location | Stage 01 source |
+|---|---|---|
+| Picarro G2401 | `raw/WYO_picarro/` | raw/ (trusted) |
+| Sprinter met/GPS | `raw/WYO_sprinter/` | raw/ (trusted) |
+| Aeris Ultra 460 | `raw/WYO_aerisultra460/` | raw/ (trusted) |
+| Aeris Ultra 321 | `raw/LANL_aerisultra321/` | **01_utc_corrected/** (clock fixed) |
+| Aeris Pico 017 | `raw/LANL_aerispico017/` | **01_utc_corrected/** (clock fixed) |
+| UOU LGR | `raw/UOU_LGR/final/` | raw/ (trusted) |
+| LANL GPS | `raw/LANL_toughbook/GPS/` | raw/ (toughbook epoch; GPS-corrected in Stage 03b) |
+| LANL Anem | `raw/LANL_toughbook/Anem/` | raw/ (toughbook epoch; GPS-corrected in Stage 03b) |
+| WYO PTR-TOF | `raw/WYO_PTR-TOF/` | — (no data; stub in pipeline) |
+
+### Platform / date schedule
+
+**Rule: everything before 2026-02-03 was MML (Toughbook only). RPi files for those dates are
+accidental duplicates — ignore.**
+
+| Date | Platform | Instruments | Logger |
+|---|---|---|---|
+| 2026-01-19 to 01-22 | MML | Ultra321, Pico017 | Toughbook |
+| 2026-02-02 | MML | Ultra321 | Toughbook |
+| 2026-02-03 | WYO | Ultra321, Ultra460, Picarro | RPi (no Pico017) |
+| 2026-02-04 | MML | Ultra321, Pico017 | Toughbook |
+| 2026-02-04 | WYO | Ultra460, Picarro | — (trusted) |
+| 2026-02-05 to 02-12 | WYO | Ultra321, Pico017, Ultra460, Picarro | RPi |
+| 2026-03-08 | MML | Ultra321, Pico017 | Toughbook |
+| 2026-03-10 | MML | Ultra321, Pico017, LGR | Toughbook |
 
 ---
 
 ## Pipeline
 
-| Step | Output dir | Tool |
+| Stage | Entry point | Output | Mode |
+|---|---|---|---|
+| 01 — UTC clock correction | `pipeline/01_utc_correction.ipynb` | `01_utc_corrected/` | Run All |
+| 02 — Standardize | `pipeline/02_standardize.py` | `02_standardized/` | unattended CLI |
+| 03 — Quality survey | `pipeline/03_survey.ipynb` | `quality_manifest.yaml` | interactive, resumable |
+| 03a — WYO alignment | `pipeline/03a_align_wyo.ipynb` | `03_instrument_aligned/` | interactive widget |
+| 03b — MML alignment | `pipeline/03b_align_mml.ipynb` | `03_instrument_aligned/` | interactive widget |
+| 04 — Calibration | `pipeline/04_calibration.ipynb` | `04_calibrated/` | Run All |
+| 04 — Calibration QC | `pipeline/04_calibration_qc.ipynb` | *(none — read-only)* | Run All |
+
+### Stage 01 — Aeris clock correction
+
+Ultra321's timestamp counter ticks a fixed 1.024 s per sample while the unit actually samples
+every ~0.992 s. It gains ~32 ms/sample and the firmware corrects with a hard jump back of
+−2.000 s (or −3.000 s) roughly every 69 samples. **The backstep is the correction** — the rows
+before it are up to 2 s too late.
+
+Stage 01 fixes this at source by joining each row to the logger's host clock: the Toughbook/RPi
+`.dat` files log both `Epoch_time` (host receipt) and the instrument's own `Time Stamp` for the
+same rows, so `build_host_clock_map` pools every logger file into
+`{instrument Time Stamp -> host Epoch_time}` and each Aeris row is matched by exact string.
+
+Sorting by the instrument timestamp was investigated and **rejected**: file order is
+acquisition order and is already correct, so sorting reorders rows away from truth to make a
+wrong clock self-consistent, and leaves the error untouched.
+
+Every corrected row carries a **`ts_source`** column:
+
+| value | meaning |
+|---|---|
+| `logger_epoch` | matched to a real host-clock row — the accurate case |
+| `median_offset` | no logger match; per-file median offset applied. **Still carries the ~2 s sawtooth.** |
+| `instrument_clock` | no logger coverage at all for this file |
+| `unpaired` | spectra row with no counterpart in the paired Raw file (label unknown; the timestamp itself is corrected) |
+
+Files with no logger coverage go to a `no_coverage/` subdirectory rather than being silently
+mixed in with corrected output.
+
+### Stage 02 — Standardize
+
+Reads every instrument through `src/readers.py`, applies rename maps, and writes Parquet with
+a tz-aware UTC `TIMESTAMP` index. Guarantees `ts_source` is present on every file
+(`instrument_clock` for instruments Stage 01 doesn't touch).
+
+Spectra files are **headerless and positional** — `read_spectra` derives the spectral channel
+count from total column width, so `ts_source` cannot be written into them at Stage 01. It is
+recovered here by joining the paired Raw file on the timestamp string.
+
+A `sort_index` remains, demoted to a **net** rather than the fix: after Stage 01 it can only
+touch the residual `median_offset` rows and Ultra460.
+
+### Stage 03 — Instrument alignment
+
+`03_survey.ipynb` first, to mark each file good / uncertain / bad into
+`quality_manifest.yaml` (resumable — it loads what is already there). Then:
+
+**03a (WYO platform)** — auto cross-correlation against Picarro CH4.
+
+| Section | Instrument | Reference | Method |
+|---|---|---|---|
+| A | WYO_aerisultra460 | Picarro CH4 | auto cross-correlation |
+| B | LANL_aerisultra321 (WYO dates) | Picarro CH4 | auto cross-correlation |
+| C | LANL_aerispico017 (WYO dates) | Picarro CH4 | auto cross-correlation |
+| — | WYO_picarro, WYO_sprinter | — | trusted pass-through (lag = 0) |
+
+**03b (MML platform)** — manual H2O spike alignment against the anemometer.
+
+| Section | Instrument | Reference | Method |
+|---|---|---|---|
+| E1 | LANL_aerisultra321 (MML dates) | Anem u/v/w | manual H2O spike (`normalize=True`) |
+| E2 | LANL_aerispico017 (MML dates) | Anem u/v/w | manual H2O spike (`normalize=True`) |
+| E3 | UOU_LGR (Mar 10) | Anem u/v/w | manual H2O spike (`normalize=True`) |
+| F | LANL_GPS | GPS satellite UTC | auto: median(toughbook_epoch − GPS_UTC) per date |
+| — | LANL_Anem, LANL_GPS | — | GPS correction only (−gps_corr) |
+
+**Total lag for MML gas:** `tube_lag − gps_corr`  **For Anem / GPS:** `−gps_corr`
+
+> **Verifying a widget-driven review actually landed.** The apply step's `ok`/`bad`/`warn`
+> counts are *not* sufficient — an un-reviewed session is applied as `tube_lag = 0.0` with a
+> `[WARN no tube lag]` and still counts as `ok`. After a review, read
+> `lag_offsets_{wyo,mml}.json` directly and confirm `tube_lags` has one entry per
+> non-rejected session. An empty or short dict beside a high `warn` count is the signature of
+> clicks that never persisted.
+
+### Stage 04 — Calibration
+
+Two notebooks, deliberately separated:
+
+- **`04_calibration.ipynb`** — the applied path only. Fits, saves `calibration_coefs.json`,
+  writes calibrated Parquet. Run All; no widgets.
+- **`04_calibration_qc.ipynb`** — candidate comparison, drift QC, interference diagnostics.
+  **Writes no files.** This is where methods are compared; it has no power to change output.
+
+Two explicit locks live in the applied notebook's config cell, with inline `assert`s tying
+them to the code path so an edited lock without a matching code change fails loudly.
+
+**`CAL_METHOD_LOCKED`** — *how* each species is calibrated:
+
+| species | method | why |
 |---|---|---|
-| 1. Aeris internal clock correction | `ts_corrected/` | `notebooks/01_timestamp_correction.ipynb` |
-| 2. First clean | `cleaned/` | `mobilelab/preprocess/clean.py` |
-| 3. Lag verification (cross-correlation) | — (offsets JSON) | `notebooks/02_verify_offsets.ipynb` |
-| 4. Second clean with lag offsets | `recleaned/` | `mobilelab/preprocess/apply_offsets.py` |
+| `CH4` | `tank` (span) | Both candidates viable. Tank wins at the certified ladder points, and this is a plume-detection campaign — accuracy at plume concentrations matters more than the cross-cal's tighter ambient agreement. Tank is also directly traceable to the certified standards. All four instruments ship the **plain tank fit**; the baseline anchor described under `CAL_BASELINE_ANCHOR` below is recorded but **not applied**. |
+| `C3H8` | `tank` | Forced — only Ultra321 measures C3H8, so no reference partner exists. |
+| `C2H6` | `reference` | Forced — the tank has one certified point (NOAA, 1.63 ppb), far below the ambient/plume range. Ultra460 stands in as reference. |
 
-**All four steps are complete.** `recleaned/` contains the final per-instrument CSVs for all deployment days (Jan 19–22, Feb 2–12, Mar 8, Mar 10).
+**`CAL_DROPPED`** — *which individual* `(gas, instrument)` corrections are withheld despite
+being computable. A dropped correction is still **fit and plotted** in the notebook (so the
+evidence for rejecting it stays on the page) but is excluded from `calibration_coefs.json` and
+never applied, so that instrument simply has no calibrated column for that gas.
+**Currently empty** — nothing is dropped.
+
+**`CAL_CAVEATS`** — same key shape, opposite disposition: corrections that *are* saved and
+applied but carry a `caveat` string into their `calibration_coefs.json` record. The presence
+of a `caveat` field is the machine-readable "do not use this unqualified" flag.
+
+| caveated | reason |
+|---|---|
+| `('C2H6', 'Ultra321')` | **Retained for diagnostic use, not as a quantitative C2H6 measurement.** C3H8 spectral cross-talk: its span fit is far looser than Pico017's and the fit residual correlates strongly and positively with C3H8 at the matched peaks — no anchor choice fixes a spectral interference. The ambient-median anchor makes the *baseline* match Ultra460 by construction, so the baseline looks right while individual peak magnitudes are not reliable. Dropped 2026-08-26; **reinstated 2026-08-27** because characterising when a C2H6 retrieval degrades in the presence of propane/methane is a downstream deliverable that needs the calibrated column. Its CH4 and C3H8 corrections are unaffected. |
+
+**`CAL_BASELINE_ANCHOR`** — a third disposition, same `(gas, instrument)` key shape:
+corrections for which an **alternative intercept is computed and recorded, but deliberately
+not applied** (`CAL_BASELINE_ANCHOR_APPLY = False`). The alternative keeps the tank-fitted
+**slope bit-for-bit** and moves only the **intercept**, so the ambient baseline would match
+co-located, tank-corrected Picarro at the median (`cal.reanchor_intercept`).
+
+| anchor computed for | disposition |
+|---|---|
+| `('CH4', 'Ultra460')` | Recorded, `"applied": false`. Tank intercept `+0.2797`; `intercept_if_applied` `+0.4049`. |
+| `('CH4', 'Ultra321')` | Recorded, `"applied": false`. Tank intercept `+0.2340`; `intercept_if_applied` `+0.1193`. |
+
+**Why it is recorded rather than applied.** `*_cal` means *traceable to the certified ladder*.
+This offset is a harmonization to another **instrument** — a different kind of claim — so
+folding it into the same column is precisely the blend of calibration and analysis that Stage
+04 exists to avoid. Withholding it costs nothing, because it is a pure constant:
+
+```python
+# recover the anchored value downstream, exactly, from calibration_coefs.json
+anchored = (raw - rec['baseline_anchor']['intercept_if_applied']) / rec['slope']
+```
+
+That reproduces the previously-shipped anchored column **bit-for-bit** (verified: max
+absolute difference 0.0), and **ΔCH4 is identical either way** since a constant cancels in any
+enhancement-above-background analysis. Setting `CAL_BASELINE_ANCHOR_APPLY = True` restores the
+old behaviour if a future release wants it.
+
+A welcome side effect: with nothing anchored, **all four CH4 instruments get identical
+treatment**, so the old "Pico017 is the odd one out" asymmetry is gone from the shipped
+product.
+
+*Where the offset comes from:* the tank fit is an unweighted OLS across 0–57 ppm, so it is
+pinned by its high-concentration points; ambient sits at ~2 ppm, the bottom 3.5% of that range,
+where a constant offset costs the fit almost nothing. Measured against Picarro, **85–98% of
+each instrument's ambient mean-square error is that offset**, and the residual *scatter* is
+identical with or without the adjustment.
+
+**Why a campaign-wide anchor was not good enough to apply.** It cannot zero every day. If
+applied, the median offset vs Picarro would still run −0.057 to +0.011 ppm for Ultra460 and
++0.096 to −0.018 ppm for Ultra321 across the nine WYO dates, with Ultra321's drifting
+monotonically from Feb 3 to Feb 12; Feb 7–12 sit at ±0.01–0.02 ppm while Feb 3/5/6 are
+noticeably worse. **The campaign-aggregate figures average this away — do not read them as
+per-day accuracy.** So the adjustment trades a clean traceability claim for uneven,
+hard-to-describe agreement. Per-WYO-day anchoring would fix it properly, but needs a per-date
+coefficient structure the output format does not have and a fallback for MML days that have no
+Picarro — post-analysis work either way. See Section H of `04_calibration.ipynb` for the full
+per-day table.
+
+Reassuringly, within any window the residual *scatter* is only **0.017–0.033 ppm**: the traces
+are parallel and differ in offset alone, so span and timing are not implicated.
+
+**What this means for absolute comparisons.** Because no instrument is anchored, absolute
+ambient CH4 differs between instruments by a constant: roughly 0.12–0.13 ppm for Ultra460 and
+Ultra321, and roughly **+0.28 ppm for Pico017** against Picarro. Pico017 could not have been
+anchored in any case — it is co-located with Picarro only on the 8 WYO days, while ~18% of its
+rows come from MML sessions spanning January to March, across which its CH4 baseline relative
+to Ultra321 moves by 0.63 ppm (see *Known issues*). **Downstream work comparing absolute
+ambient CH4 across instruments must account for these offsets; ΔCH4 is unaffected by any of
+them.**
+
+Live fit statistics are deliberately not quoted here — read them from
+`calibration_coefs.json`'s own `r2` fields and `04_calibration_qc.ipynb` §E, which are
+regenerated with each run.
+
+CH4/C3H8 use a single multi-point OLS against the tank ladder (not piecewise — the residual
+pattern that would motivate a low/high split appears identically in Picarro, so it reflects
+dilution-manifold imprecision, not instrument nonlinearity). Canonical date is **Feb 12**, the
+only event spanning the full 0–57 ppm range; Feb 3 and Feb 6 are computed as drift QC only.
+
+Apply formula: `corrected = (measured * scale_in - intercept) / slope` — the same for `*_cal`
+and `*_xcal`; only the `traceability` of the coefficients differs.
 
 ---
 
-## Notebooks
+## Output structure
 
-- **01_timestamp_correction** — Corrects the Aeris Ultra321 and Pico017 internal clocks
-  using RPi/Toughbook logger files that contain both a correct UTC epoch and the instrument's
-  wrong timestamp. Offsets vary by deployment period and are matched per-file. Results saved
-  to `offsets/ts_correction_offsets.json`.
+### Stage 02
 
-- **02_verify_offsets** — Cross-correlates cleaned instrument data against the Picarro
-  reference to detect and fine-tune residual lags. Also verifies the Ultra460 timestamps.
-  Results saved to `offsets/*_lag.json` and `offsets/*_rejected.json`.
+```
+02_standardized/
+├── {instrument}/
+│   ├── Raw/                    ← gas/met Parquet (UTC index, ts_status, ts_source)
+│   ├── Raw/no_coverage/        ← no logger coverage; Mountain Time clock, unreliable
+│   ├── Eng/  Eng/no_coverage/  ← engineering + GPS
+│   └── Spectra/ or Spectralite/ (+ no_coverage/)   ← 1,034 cols — use column projection
+├── WYO_picarro/  UOU_LGR/  WYO_sprinter/  LANL_GPS/  LANL_Anem/   ← flat
+├── routing_manifest.json       ← which raw_stem ran on which platform
+└── run_manifest.json           ← git hash + per-instrument counts
+```
 
-Notebooks 03–05 have been moved to `archive_legacy_analysis/` and are superseded by
-`mobile-hydrocarbon-analysis`.
+### Stage 03
 
----
+```
+03_instrument_aligned/
+├── {instrument}/{subdir}/
+│   ├── *.parquet               ← lag-shifted aligned files
+│   ├── bad/                    ← marked bad in the widget; no lag applied
+│   └── bad_timestamp/          ← Stage 02 no_coverage pass-through
+├── WYO_picarro/  WYO_sprinter/ ← trusted pass-through (lag = 0)
+├── LANL_GPS/  LANL_Anem/       ← GPS correction only (−gps_corr, lag_ref=GPS_satellite_UTC)
+├── quality_manifest.yaml       ← the manual survey (NOT regenerable — back it up)
+├── lag_offsets_wyo.json        ← 03a confirmed lags + rejected list
+├── lag_offsets_mml.json        ← 03b tube lags + GPS corrections + rejected list
+└── apply_manifest_wyo/mml.json ← apply stats
+```
 
-## src
+### Stage 04
 
-ETL helper scripts in `src/`:
+```
+04_calibrated/
+├── {instrument}/{Raw,Eng}/     ← *_cal / *_xcal columns + cal_coefs_ref column
+├── {spectra}/ {GPS} {Anem} {sprinter} {LGR}   ← pass-through, NO cal_coefs_ref
+├── calibration_coefs.json      ← coefficients + traceability/method/confidence tags
+├── apply_manifest.json         ← per-instrument file/row counts
+└── passthrough_manifest.json   ← what was copied unchanged
+```
 
-- `timestamp_correction.py` — Phase 1 offset engine (load logger files, compute offsets, apply corrections)
-- `add_spectra_headers.py` — prepend correct header to headerless Aeris Spectra/Spectralite files
-- `clean_sprinter.py` — clean WYO Sprinter CSVs
-- `clean_gps.py` — parse Toughbook NMEA GPS files
-- `clean_anem.py` — parse Toughbook Trisonica anemometer files
+The presence of a `cal_coefs_ref` column is how to tell a corrected file from a pass-through.
+**8 corrections ship: 5 traceable (`*_cal`) and 3 transferred (`*_xcal`).**
 
-`merge_daily.py` has been moved to `archive_legacy_analysis/` — use it as a starting point in `mobile-hydrocarbon-analysis`.
-
----
-
-## offsets/
-
-Version-controlled JSON files produced by the ETL pipeline:
-
-| File | Phase | Description |
+| gas | instruments | column |
 |---|---|---|
-| `ts_correction_offsets.json` | 1 | Per-file clock offset (seconds) for Ultra321 and Pico017 |
-| `ultra460_lag.json` / `_rejected.json` | 3 | Ultra460 residual lag vs Picarro |
-| `ultra321_lag.json` / `_rejected.json` | 3 | Ultra321 residual lag vs Picarro / Toughbook |
-| `pico017_lag.json` / `_rejected.json` | 3 | Pico017 residual lag |
-| `lgr_lag.json` / `_rejected.json` | 3 | LGR residual lag |
-| `ultra321_spectra_lag.json` / `_rejected.json` | 4 | Derived spectra keys for Ultra321 |
-| `pico017_spectra_lag.json` / `_rejected.json` | 4 | Derived spectra keys for Pico017 |
-| `ultra460_spectralite_lag.json` / `_rejected.json` | 4 | Derived spectra keys for Ultra460 |
+| CH4 | Picarro, Ultra460, Ultra321, Pico017 | `CH4_ppm_cal` |
+| C3H8 | Ultra321 | `C3H8_ppm_cal` |
+| C2H6 | Ultra460 *(identity — the reference)*, Pico017, Ultra321 | `C2H6_ppb_xcal` |
+
+---
+
+## Conventions
+
+- **All timestamps are UTC**, tz-aware with a `+00:00` offset, from Stage 02 onward.
+- **`ts_status`** — `"utc_corrected"` / `"no_coverage"` / `"trusted"`, per file.
+- **`ts_source`** — per **row** timestamp provenance (see Stage 01 table above).
+- **All Stage 02+ output is Parquet.** Use `pd.read_parquet(path, columns=[...])`; spectra
+  files have 1,034 columns, so column selection matters.
+- **Never modify `raw/`** — read-only source of truth.
+- **`paths.py` is the single source of truth for paths.** Import via `from paths import ...`.
+- **`nbstripout` strips notebook outputs on `git add`** — executed HTML belongs with the data,
+  not in git.
+
+---
+
+## Reproducibility
+
+Every stage writes a manifest recording the commit that produced it, so any output directory
+traces back to exact code and exact upstream inputs.
+
+- **`git_hash` / `git_dirty`** — on every manifest, via `src/provenance.git_info()`.
+- **`upstream`** — from Stage 02 onward each manifest embeds the upstream stage's own
+  `{stage, git_hash, git_dirty, run_utc}` via `upstream_ref()`, so the full chain from raw to
+  any output is traceable without matching timestamps by hand.
+- **`regen_git_hash` / `regen_git_dirty`** — Stage 03's apply manifests carry these separately
+  from `git_hash`/`git_dirty`, which record when the alignment was **decided** (the widget
+  commit), not when the Parquet was last mechanically **rebuilt**.
+- **`check_clean(REPO_ROOT, context=...)`** — called before each stage's write step; prints a
+  loud non-fatal warning if the tree is dirty, so a non-reproducible run doesn't silently
+  record `git_dirty: true`.
+- **Human judgment persists outside the notebooks** — `quality_manifest.yaml` and
+  `lag_offsets_*.json` survive kernel restarts and code changes. See *Re-running Stage 03*
+  above.
+- **Freezing a canonical run** — `jupyter nbconvert --execute --to html <notebook>
+  --output-dir <its data stage dir>`. The executed HTML is the human-readable record of what
+  ran; the manifest JSON plus that HTML together form the complete frozen record.
+
+### Verification gate
+
+```bash
+python scripts/check_timestamps.py --stage 02 03 04    # add --verbose to list every offender
+```
+
+Checks every Parquet file's index for sort order, backsteps, duplicates, and tz-awareness, and
+reports the `ts_source` breakdown. Exits non-zero if anything is unclean — safe to use in a
+shell gate.
+
+---
+
+## Known issues and data-user caveats
+
+These are properties of the delivered dataset. Read before treating any column as absolute.
+
+- **~1.6% of Aeris rows still carry the ~2 s sawtooth.** Rows tagged `ts_source =
+  "median_offset"` had no logger coverage, so only a per-file median offset could be applied.
+  Filter on `ts_source` if timing accuracy matters. Rows in `no_coverage/` / `bad_timestamp/`
+  directories are worse still — a Mountain Time clock.
+- **The host clock is a serial *receipt* time**, and the Toughbook is not NTP-synced. Stage 01
+  trades a systematic ±2 s ramp for roughly 0.4 s zero-mean noise. Absolute accuracy still
+  rides on Stage 03's GPS correction.
+- **`WYO_sprinter` stalls: 69 minutes of missing position, and gaps up to 3 minutes long.**
+  The Sprinter's GPS is the position source for *every* WYO-platform gas measurement, so this
+  is the limiting factor on any spatial join. 35 gaps longer than 30 s total 68.9 min (median
+  124 s, max 185 s); coverage is 98.8% of the wall span (336,909 rows against 340,934 expected
+  at 1 Hz). **In 15 of the 35 gaps the van moved more than 100 m.** A `merge_asof` onto sprinter
+  position **without a `tolerance` argument will silently carry a stale fix forward across up
+  to ~3 minutes of driving** — always pass one.
+- **`WYO_sprinter` nulls its coordinates on 15 no-fix rows.** Rows where `GPS Quality == 0`
+  (the NMEA invalid-fix code) are logged with `lat_deg`/`lon_deg` of exactly `0.0` — a real
+  coordinate in the Gulf of Guinea. Stage 02's reader masks those two columns to NaN, matching
+  what the logger already does to `altitude_m`; met channels (`temp_C`, `RH_pct`,
+  `pressure_bar`) come off separate sensors and are left valid. Fix quality over the campaign
+  is `2` (DGPS) 303,429 rows / `1` (SPS) 33,465 / `0` (invalid) 15. Filter on `GPS Quality` if
+  you need DGPS precision specifically.
+- **`WYO_sprinter` has 72 duplicate timestamps** across 336,909 rows (0.02%), in 15 of 17
+  files — forming 42 collision groups of 2–3 rows. These are a **logger-stall artifact, not a
+  timestamp-resolution one**: the instrument runs at 1 Hz (median `dt` 1.00 s), and 34 of the
+  41 groups are immediately followed by one of the >30 s gaps above — the clock freezes, two
+  or three rows land on the frozen stamp, then data stops. What differs inside a group is
+  almost entirely derived wind and heading noise (`gps_wind_dir_true` 40/42 groups,
+  `wind_dir_true` 37/42, `heading_deg` 21/42), typically on a stationary van where wind
+  direction is meaningless. **Position is bit-identical in 28 of the 42 groups**; the 14 that
+  differ do so by 1e-6–9e-6° (~0.1–1 m), worst case ~10 m. Dropping duplicates therefore costs
+  nothing that matters — `load_aligned_series` uses `keep='first'` for in-repo use, and
+  downstream code should do the same. (`merge_asof` tolerates duplicate keys, but `.loc[ts]`
+  returns a frame instead of a row and `reindex` raises.)
+- **C2H6 is not traceable to a certified zero — which is why it ships as `*_xcal`.** Pico017's
+  and Ultra321's baselines are anchored to match Ultra460's own ambient median, not the tank's
+  absolute zero (the two genuinely disagree at baseline). This makes `C2H6_ppb_xcal`
+  cross-instrument-consistent but **not** an absolute measurement, and the whole thing rests on
+  Ultra460's C2H6 being correct, which is assumed, not independently validated. Ultra460 is
+  emitted with the identity transform so all three instruments carry the same column rather
+  than the product being "one instrument raw, two transformed to match it" — but that
+  uniformity is presentational honesty, not evidence that any of the three is absolute.
+- **Ultra321's C2H6 is diagnostic only.** It has a `C2H6_ppb_xcal` column, but its
+  record in `calibration_coefs.json` carries a `caveat` field: C3H8 cross-talk makes its peak
+  magnitudes unreliable. It is shipped so the failure can be characterised downstream — not as
+  a measurement. See `CAL_CAVEATS` above.
+- **MML-date calibration is an extrapolation — and there is positive evidence of drift.**
+  All three tank events fell inside the WYO window (Feb 3–12), so Feb-12 coefficients reach
+  the January and March MML dates with no direct tank evidence. It is worse than merely
+  unvalidated: Pico017 and Ultra321 are co-located on **every** MML date, and their
+  tank-corrected ambient CH4 difference moves **0.63 ppm across the campaign** — +0.895
+  (Jan 20), +0.540 (Jan 22), +0.280 (Feb 4), +0.264 (Mar 10) — against a spread of only
+  0.09 ppm inside the WYO window. At least one of the two drifted substantially, and with
+  only those two instruments co-located there and no third reference (UOU_LGR exists on
+  Mar 10 alone), **this dataset cannot say which.** MML sessions are ~18% of each LANL
+  instrument's rows (Pico017 133,150 of 742,599; Ultra321 130,932 of 781,924).
+  Characterising or correcting that drift is analysis work, not ETL — it is deliberately
+  not attempted here.
+- **Method locks are a point-in-time decision.** Re-run `04_calibration_qc.ipynb` if new tank
+  or ambient data should prompt revisiting one.
+
+---
+
+## Repository layout
+
+### `src/`
+
+| Module | Stage | Purpose |
+|---|---|---|
+| `aeris_clock.py` | 01 | `build_host_clock_map`, `correct_timestamps`, `apply_host_clock_to_raw/_spectra`. Scalar-offset fallbacks retained for coverage mapping. |
+| `readers.py` | 02 | Per-instrument readers, rename maps, `INSTRUMENT_TASKS` registry. |
+| `align.py` | 03 | `resample_series`, `cross_correlate`, `apply_lag_to_parquet`, `load_quality_manifest`, `load_aligned_series`, `resume_review`. |
+| `calibration.py` | 04 | Generic fitting/apply/plotting — no campaign-specific logic. Entry points: `calibrate_and_check_tank`, `calibrate_and_check_reference`, `fit_reference_cal`. Comparison harness: `compare_candidate_coefs`, `assess_tank_coverage`. |
+| `provenance.py` | all | `git_info`, `check_clean`, `upstream_ref`. |
+
+### `scripts/`
+
+| Script | Purpose |
+|---|---|
+| `check_timestamps.py` | Ingestion gate — timestamp index validation + `ts_source` breakdown for any stage. |
+| `parquet_to_gpx.py` | Export a track to GPX for inspection in mapping tools. |
+
+### `config/`
+
+`instruments.yaml` and `deployments.yaml` are **descriptive metadata** for analysis consumers
+(instrument types, gas channels, platform schedule, logger relationships). They are not parsed
+by the pipeline itself — `paths.py` and `src/readers.py::INSTRUMENT_TASKS` drive execution, and
+instrument keys match across all three.
+
+Note that a `gases` entry lists what an instrument physically **measures**, which is not the
+same as what has a traceable `*_cal` column rather than a transferred `*_xcal` one (see *What a
+corrected column means*), nor the same as what is emitted at all (see `CAL_DROPPED`), nor the
+same as what is safe to use unqualified (see `CAL_CAVEATS`).
+
+### `archive_legacy_analysis/`
+
+Pre-restructure pipeline scripts and analysis notebooks, kept for reference. **Not maintained;
+do not run.** See its own README for contents.

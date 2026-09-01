@@ -7,6 +7,7 @@ dependencies:
   # core data / numerics
   - numpy
   - pandas
+  - pyarrow
   - scipy
   # plotting
   - matplotlib
@@ -19,5 +20,7 @@ dependencies:
   # geo / web
   - folium
   - requests
+  # config
+  - pyyaml
   # dev tools
   - nbstripout
