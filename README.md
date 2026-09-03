@@ -1,6 +1,10 @@
 # mobile-slv
 
-## STATUS: v2 pipeline — ETL + QA/QC (incl. calibration)
+## STATUS: frozen at [`v2.0-etl-freeze`](https://github.com/agmeyer4/mobile-slv/releases/tag/v2.0-etl-freeze) — ETL + QA/QC (incl. calibration)
+
+Final output: **`04_calibrated/`**. The freeze is a full re-derivation from `raw/` — every stage
+re-run with nothing carried over from earlier runs, all 341 sessions re-surveyed and every
+alignment lag re-reviewed, and `git_dirty: false` in every manifest at the tagged commit.
 
 Supersedes [`v1.0-etl-freeze`](https://github.com/agmeyer4/mobile-slv/releases/tag/v1.0-etl-freeze),
 which froze at `recleaned/` and explicitly excluded calibration. **v2 rebuilds the pipeline as
@@ -108,6 +112,8 @@ raw/  (read-only)
       └─► 02_standardized/      Stage 02 — uniform UTC TIMESTAMP index, clean columns, Parquet
            └─► 03_instrument_aligned/   Stage 03 — cross-correlation / spike lag offsets applied
                 └─► 04_calibrated/      Stage 04 — gas corrections applied (*_cal / *_xcal)
+
+frozen_records/<tag>/            release records — executed HTML + calibration_coefs.json
 ```
 
 `04_calibrated/` is a **complete mirror** of Stage 03's breadth — corrected gas files plus
@@ -445,7 +451,10 @@ traces back to exact code and exact upstream inputs.
   above.
 - **Freezing a canonical run** — `jupyter nbconvert --execute --to html <notebook>
   --output-dir <its data stage dir>`. The executed HTML is the human-readable record of what
-  ran; the manifest JSON plus that HTML together form the complete frozen record.
+  ran; the manifest JSON plus that HTML together form the complete frozen record. That copy is
+  the *working* record and dies with its data at the next archival; a release additionally gets
+  a durable copy in `frozen_records/<tag>/`, which archive pruning never touches. See
+  [`docs/RUNBOOK.md`](docs/RUNBOOK.md) Part II.
 
 ### Verification gate
 
