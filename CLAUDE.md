@@ -24,6 +24,10 @@ looks like data corruption but is a missing dependency:
 ~/software/pkg/miniconda3/envs/mobile-slv/bin/python
 ```
 
+The same applies to `jupyter`: a bare `jupyter` on PATH resolves to miniconda's **base** env,
+which has no `nbconvert`, so a phase-5 HTML export fails there rather than in the pipeline. Use
+`~/software/pkg/miniconda3/envs/mobile-slv/bin/jupyter-nbconvert` from a non-interactive shell.
+
 ## Editing notebooks
 
 `nbstripout` is a **clean filter**, so git sees an executed notebook as unmodified. Two
@@ -36,6 +40,19 @@ consequences:
 2. `git status` being clean does *not* mean the working tree matches what you'd get from a
    fresh clone. Conversely, re-executing a notebook does not make the tree dirty — which is why
    a stage can legitimately report `git_dirty: false` with outputs present.
+3. An executed notebook nevertheless shows ` M` in `git status` **forever**, because the file's
+   mtime/size changed even though the filtered content is byte-identical to HEAD. `git diff` is
+   empty and `git_dirty` (computed as `git diff --quiet`) stays false, so it is cosmetic.
+   **`git update-index --refresh` does NOT clear it** — it compares the raw file without
+   applying the clean filter, prints "needs update" and exits 1. What works: `git add
+   pipeline/*.ipynb` (clears the flag, stages nothing, keeps the outputs) or `nbstripout
+   pipeline/*.ipynb` (clears it and discards them).
+4. **Never `git checkout` / `restore` / `stash` a notebook holding a run's outputs** — the
+   smudge filter hands back the stripped version and the executed record is gone. To put back
+   committed content without losing outputs, patch the file with a json/nbformat script instead.
+   A Jupyter save silently *dropping* a trailing empty cell is enough to make the tree genuinely
+   dirty and stamp `git_dirty: true` into the next stage's manifest; re-inserting that cell by
+   script is the safe fix.
 
 Editing large notebooks through Read/Edit tooling chokes once real plotly outputs are baked in.
 Edit programmatically instead — load with `nbformat`/`json`, patch `cell['source']`, write back,
@@ -47,6 +64,17 @@ notebook was executed under VSCode/JupyterLab. Fix: walk the outputs and add a `
 built with `plotly.io.to_html(plotly.io.from_json(...), include_plotlyjs='cdn',
 full_html=False)` to any output that has the vendor mimetype but no `text/html`. Verify by
 grepping the result for `plotly-graph-div` — don't trust a zero exit code.
+
+## Stage 03 survey — the completeness check is not what it looks like
+
+`03_survey.ipynb`'s summary cell iterates the **manifest**, not the file list, so a session that
+was never clicked is simply absent and is never counted. **`-=0 unreviewed` therefore prints
+clean no matter how many sessions are missing**, and `README`/`RUNBOOK`'s "every session carries
+a verdict" check does not actually verify that clause. This has bitten once (one Ultra460 session
+had no verdict after a full re-survey). Reconcile externally instead — glob
+`SURVEY_INSTRUMENTS`' dirs (main + `no_coverage/`) and diff the stems against the manifest keys.
+A missing entry is not inert: `align.file_quality` falls back to `('uncertain','')` and only
+`'bad'` pre-rejects, so the session flows into alignment unjudged.
 
 ## Widget-driven stages (03a / 03b)
 
